@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import demoData from './src/demoData.json';
 import { overview, parseGrades, Subject } from './src/grades';
@@ -26,6 +26,7 @@ export default function App() {
   const [selected, setSelected] = useState<StudentClass | null>(null);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [diag, setDiag] = useState<string | null>(null);
 
   const fail = useCallback((e: unknown) => {
     const msg = e instanceof PortalError ? e.message : 'Došlo je do neočekivane greške. Pokušajte ponovo.';
@@ -35,7 +36,7 @@ export default function App() {
 
   const loadGrades = useCallback(
     async (cls: StudentClass, isDemo = demo) => {
-      const raw = isDemo ? demoData.grades : await client.current.getGrades(cls.studentClassId);
+      const raw = isDemo ? demoData.grades : await client.current.getGrades(cls);
       setSelected(cls);
       setSubjects(parseGrades(raw));
     },
@@ -110,6 +111,22 @@ export default function App() {
     setSubjects([]);
     setSelected(null);
     setMode('login');
+  };
+
+  const diagnose = async (username: string, password: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (!client.current.loggedIn) {
+        const saved = !username && !password ? await storage.loadCredentials() : null;
+        await client.current.login(saved?.username ?? username, saved?.password ?? password);
+      }
+      setDiag(await client.current.diagnose());
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const startDemo = async () => {
@@ -188,8 +205,34 @@ export default function App() {
             onLoginSaved={loginSaved}
             onForget={forget}
             onDemo={startDemo}
+            onDiagnose={diagnose}
           />
         )}
+        <Modal visible={diag !== null} animationType="slide" onRequestClose={() => setDiag(null)}>
+          <SafeAreaView style={{ flex: 1, padding: 16, backgroundColor: C.bg }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: C.text }}>Dijagnostika</Text>
+            <Text style={{ color: C.muted, marginVertical: 8 }}>
+              Ovde je samo struktura stranica portala (nazivi polja i statusi), bez imena, ocena i lozinke. Pošaljite ovaj tekst da bismo prilagodili aplikaciju.
+            </Text>
+            <ScrollView style={{ flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 10 }}>
+              <Text selectable style={{ fontFamily: 'monospace', fontSize: 11, color: C.text }}>{diag}</Text>
+            </ScrollView>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              <Pressable
+                style={{ flex: 1, backgroundColor: C.primary, borderRadius: 10, padding: 12, alignItems: 'center' }}
+                onPress={() => diag && Share.share({ message: diag })}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700' }}>Podeli / kopiraj</Text>
+              </Pressable>
+              <Pressable
+                style={{ flex: 1, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 12, alignItems: 'center', backgroundColor: '#fff' }}
+                onPress={() => setDiag(null)}
+              >
+                <Text style={{ color: C.text, fontWeight: '600' }}>Zatvori</Text>
+              </Pressable>
+            </View>
+          </SafeAreaView>
+        </Modal>
       </SafeAreaView>
     </SafeAreaProvider>
   );

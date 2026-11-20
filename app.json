@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pregled ocena",
     "slug": "ednevnik-pregled-ocena",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "ios": {
@@ -24,7 +24,8 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
-      "allowBackup": false
+      "allowBackup": false,
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"

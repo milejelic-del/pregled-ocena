@@ -11,6 +11,8 @@
  * Kredencijali se nikad ne loguju.
  */
 
+import { componentProps, findCourseArrays, maskPath, parseStudentsMenu, shapeOf } from './html';
+
 export const DEFAULT_BASE_URL = 'https://moj.esdnevnik.rs';
 
 export class PortalError extends Error {}
@@ -25,6 +27,8 @@ export interface StudentClass {
   yearLabel: string;
   schoolId: string;
   schoolName: string;
+  /** HTML način rada: link koji na portalu aktivira ovaj razred. */
+  switchHref?: string;
 }
 
 export interface Student {
@@ -37,8 +41,12 @@ const HEADERS = {
   'Accept-Language': 'sr,en;q=0.8',
 };
 
+class NotFound extends PortalError {}
+
 export class PortalClient {
   loggedIn = false;
+  /** 'api' = stare JSON adrese, 'html' = podaci iz stranica portala */
+  mode: 'api' | 'html' | null = null;
   constructor(private baseUrl: string = DEFAULT_BASE_URL, private fetchFn: FetchFn = fetch) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
   }
@@ -113,6 +121,7 @@ export class PortalClient {
       this.loggedIn = false;
       throw new LoginError('Sesija na portalu je istekla. Prijavite se ponovo.');
     }
+    if (resp.status === 404) throw new NotFound(`Portal je vratio grešku 404.`);
     if (resp.status !== 200) throw new PortalError(`Portal je vratio grešku ${resp.status}.`);
     const text = await resp.text();
     try {
@@ -122,12 +131,124 @@ export class PortalClient {
     }
   }
 
-  async getStudents(): Promise<Student[]> {
-    return parseStudents(await this.getJson('/api/students'));
+  private async getHtml(pathOrUrl: string): Promise<{ html: string; url: string }> {
+    if (!this.loggedIn) throw new LoginError('Niste prijavljeni.');
+    const resp = await this.req(pathOrUrl.startsWith('http') ? pathOrUrl.slice(this.baseUrl.length) : pathOrUrl);
+    if (isLoginUrl(resp.url)) {
+      this.loggedIn = false;
+      throw new LoginError('Sesija na portalu je istekla. Prijavite se ponovo.');
+    }
+    if (resp.status !== 200) throw new PortalError(`Portal je vratio grešku ${resp.status} za stranicu ${maskPath(pathOrUrl)}.`);
+    return { html: await resp.text(), url: resp.url };
   }
 
-  async getGrades(studentClassId: number): Promise<unknown> {
-    return this.getJson(`/api/grades/${Math.trunc(studentClassId)}`);
+  async getStudents(): Promise<Student[]> {
+    if (this.mode !== 'html') {
+      try {
+        const list = parseStudents(await this.getJson('/api/students'));
+        this.mode = 'api';
+        return list;
+      } catch (e) {
+        // 404 ili ne-JSON odgovor -> portal više nema stari API, čitamo stranice
+        if (e instanceof LoginError || !(e instanceof PortalError)) throw e;
+      }
+    }
+    this.mode = 'html';
+    const { html } = await this.getHtml('/');
+    const props = componentProps(html);
+    const activeScid = Number(props.find((p) => p.name === ':student-class-id')?.raw ?? 0) || 0;
+    const rows = parseStudentsMenu(html, this.baseUrl);
+    const byStudent = new Map<string, Student>();
+    rows.forEach((r, i) => {
+      let st = byStudent.get(r.studentId);
+      if (!st) {
+        st = { id: Number(r.studentId) || byStudent.size + 1, fullName: r.studentName, classes: [] };
+        byStudent.set(r.studentId, st);
+      }
+      const q = r.switchHref.match(/[?&]student=(\d+)/);
+      st.classes.push({
+        studentClassId: q ? Number(q[1]) : r.active ? activeScid || -1 - i : -1 - i,
+        classId: rows.length - i,
+        section: r.section,
+        yearLabel: r.yearLabel,
+        schoolId: r.schoolName,
+        schoolName: r.schoolName,
+        switchHref: r.switchHref,
+      });
+    });
+    if (!byStudent.size) throw new PortalError('Na početnoj strani portala nije pronađen spisak učenika. Pokrenite „Dijagnostiku“.');
+    return [...byStudent.values()];
+  }
+
+  async getGrades(cls: StudentClass): Promise<unknown> {
+    if (this.mode === 'api') return this.getJson(`/api/grades/${Math.trunc(cls.studentClassId)}`);
+    if (cls.switchHref) await this.getHtml(cls.switchHref); // aktivira razred na portalu
+    for (const path of ['/grades', '/grades/0/show']) {
+      let page;
+      try {
+        page = await this.getHtml(path);
+      } catch (e) {
+        if (e instanceof LoginError) throw e;
+        continue;
+      }
+      for (const p of componentProps(page.html)) {
+        const arrays = p.json ? findCourseArrays(p.json) : [];
+        if (arrays.length) return arrays.sort((a, b) => b.length - a.length)[0];
+      }
+    }
+    throw new PortalError(
+      'Prijava je uspela, ali ocene nisu pronađene na stranici portala. Dodirnite „Dijagnostika“ na ekranu za prijavu i pošaljite rezultat.',
+    );
+  }
+
+  /** Izveštaj o strukturi stranica — bez imena, ocena i drugih ličnih podataka. */
+  async diagnose(): Promise<string> {
+    const lines: string[] = [`verzija: 2`];
+    const check = async (path: string, json: boolean) => {
+      try {
+        const r = await this.req(path, json ? { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } } : {});
+        const body = await r.text();
+        lines.push(`${maskPath(path)} -> ${r.status} ${maskPath(r.url ?? '')} (${body.length} B)`);
+        return { body, url: r.url ?? '' };
+      } catch {
+        lines.push(`${maskPath(path)} -> greška mreže`);
+        return null;
+      }
+    };
+    const home = await check('/', false);
+    let scid = 0;
+    if (home) {
+      const props = componentProps(home.body);
+      scid = Number(props.find((p) => p.name === ':student-class-id')?.raw ?? 0) || 0;
+      const rows = parseStudentsMenu(home.body, this.baseUrl);
+      lines.push(`meni: ${rows.length} razreda, aktivnih ${rows.filter((r) => r.active).length}, godine ${[...new Set(rows.map((r) => r.yearLabel))].join(' ')}`);
+      describeProps(lines, '/', props);
+      const links = [...new Set([...home.body.matchAll(/href="(https?:\/\/[^"]*esdnevnik[^"]*)"/g)].map((m) => maskPath(m[1])))];
+      lines.push(`linkovi: ${links.join(' ')}`);
+    }
+    for (const p of ['/api/students', `/api/grades/${scid}`, `/api/timeline/${scid}`]) await check(p, true);
+    for (const p of ['/grades', '/grades/0/show']) {
+      const pg = await check(p, false);
+      if (pg) {
+        describeProps(lines, p, componentProps(pg.body));
+        const links = [...new Set([...pg.body.matchAll(/href="(https?:\/\/[^"]*\/grades[^"]*)"/g)].map((m) => maskPath(m[1])))];
+        lines.push(`  linkovi ka ocenama: ${links.slice(0, 15).join(' ')}`);
+        const scripts = [...pg.body.matchAll(/<script[^>]*src="([^"]*)"/g)].map((m) => maskPath(m[1]));
+        lines.push(`  skripte: ${scripts.join(' ')}`);
+        const apiRefs = [...new Set([...pg.body.matchAll(/["'](\/api\/[^"']{0,80})["']/g)].map((m) => maskPath(m[1])))];
+        if (apiRefs.length) lines.push(`  /api u stranici: ${apiRefs.join(' ')}`);
+      }
+    }
+    return lines.join('\n');
+  }
+}
+
+function describeProps(lines: string[], page: string, props: ReturnType<typeof componentProps>) {
+  lines.push(`komponente na ${page}:`);
+  for (const p of props) {
+    if (!p.name.startsWith(':') && !/url|data|init/i.test(p.name)) continue;
+    const desc = p.json !== undefined ? shapeOf(p.json) : /url/i.test(p.name) ? maskPath(p.raw) : `${typeof p.raw}(${p.raw.length})`;
+    lines.push(`  <${p.tag} ${p.name}> ${desc.slice(0, 600)}`);
   }
 }
 

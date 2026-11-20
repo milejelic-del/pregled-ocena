@@ -22,6 +22,7 @@ interface Props {
   onLoginSaved: () => void;
   onForget: () => void;
   onDemo: () => void;
+  onDiagnose: (username: string, password: string) => void;
 }
 
 export default function LoginScreen(p: Props) {
@@ -103,6 +104,16 @@ export default function LoginScreen(p: Props) {
           </Text>
         </View>
 
+        <Pressable
+          onPress={() => {
+            p.onDiagnose(username, password);
+            setPassword('');
+          }}
+          style={{ marginTop: 18 }}
+          disabled={p.busy}
+        >
+          <Text style={s.link}>Dijagnostika (ako se ocene ne učitavaju)</Text>
+        </Pressable>
         <Pressable onPress={p.onDemo} style={{ marginTop: 18 }}>
           <Text style={s.link}>Pogledaj probni prikaz sa izmišljenim podacima →</Text>
         </Pressable>

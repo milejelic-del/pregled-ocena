@@ -54,7 +54,7 @@ test('login + fetch against mock portal', async () => {
   const c = new PortalClient(BASE, cookieFetch());
   await c.login('roditelj.test', 'TajnaLozinka1!');
   const st = await c.getStudents();
-  const g = parseGrades(await c.getGrades(currentClass(st[0])!.studentClassId));
+  const g = parseGrades(await c.getGrades(currentClass(st[0])!));
   assert.ok(g.length > 5);
   await c.logout();
 });
@@ -62,4 +62,27 @@ test('login + fetch against mock portal', async () => {
 test('bad password', async () => {
   const c = new PortalClient(BASE, cookieFetch());
   await assert.rejects(c.login('roditelj.test', 'pogresna'), (e: unknown) => e instanceof LoginError && /нису тачни/.test((e as Error).message));
+});
+
+const HTML_BASE = process.env.HTML_MOCK_URL ?? 'http://127.0.0.1:5078';
+
+test('html portal: no /api, data embedded in pages', async () => {
+  const c = new PortalClient(HTML_BASE, cookieFetch());
+  await c.login('roditelj.test', 'TajnaLozinka1!');
+  const st = await c.getStudents();
+  assert.equal(c.mode, 'html');
+  assert.equal(st.length, 1);
+  assert.equal(st[0].fullName, 'Ана Петровић');
+  assert.equal(st[0].classes.length, 3);
+  const cur = currentClass(st[0])!;
+  assert.equal(cur.yearLabel, '25/26');
+  assert.equal(cur.section, 'VI 2');
+  const subjects = parseGrades(await c.getGrades(cur));
+  assert.ok(subjects.find((s) => s.name === 'Математика'));
+  const old = st[0].classes.find((k) => k.yearLabel === '24/25')!;
+  assert.ok(old.switchHref!.includes('student=6001'));
+  const report = await c.diagnose();
+  assert.ok(report.includes('/api/students -> 404'));
+  assert.ok(report.includes('<grades-index :init-data>'));
+  assert.ok(!report.includes('Ана') && !report.includes('Математика'), 'no personal data in report');
 });
