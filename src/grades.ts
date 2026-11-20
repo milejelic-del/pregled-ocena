@@ -192,3 +192,65 @@ export function isRecent(g: GradeEntry, days = 7, now = new Date()): boolean {
   const d = new Date(g.date.slice(0, 10) + 'T12:00:00');
   return (now.getTime() - d.getTime()) / 86400000 <= days && d.getTime() <= now.getTime() + 86400000;
 }
+
+// ---------------- Kalkulator „šta treba“ ----------------
+
+export interface TargetPlan {
+  target: number; // ocena koju želimo (2–5)
+  threshold: number; // potreban prosek (npr. 4,50 za 5)
+  reached: boolean;
+  fives: number | null; // koliko petica zaredom treba (null = nemoguće)
+  fours: number | null; // koliko četvorki zaredom (null = nemoguće ili nema smisla)
+}
+
+export interface Calculation {
+  partKey: string; // polugodište na koje se odnosi
+  count: number;
+  average: number;
+  plans: TargetPlan[];
+  ifOne: number; // prosek ako dobije jedinicu
+  ifTwo: number;
+  ifFive: number;
+}
+
+const THRESHOLDS: Record<number, number> = { 5: 4.5, 4: 3.5, 3: 2.5, 2: 1.5 };
+
+/** Koliko ocena vrednosti v treba dodati da prosek bude ≥ T. */
+export function gradesNeeded(sum: number, n: number, v: number, T: number): number | null {
+  if (n > 0 && sum / n >= T - 1e-9) return 0;
+  if (v <= T) return null;
+  return Math.max(0, Math.ceil((T * n - sum) / (v - T) - 1e-9));
+}
+
+/** Aktuelno polugodište: drugo ako ima ocena, inače prvo. */
+export function calculate(s: Subject): Calculation | null {
+  const key = s.parts['2']?.grades.some((g) => g.value) ? '2' : '1';
+  const vals = (s.parts[key]?.grades ?? []).flatMap((g) => (g.value ? [g.value] : []));
+  if (!s.numeric || !vals.length) return null;
+  const sum = vals.reduce((a, b) => a + b, 0);
+  const n = vals.length;
+  const avg = sum / n;
+  const r = (x: number) => Math.round(x * 100) / 100;
+  const plans = [5, 4, 3, 2]
+    .filter((t) => t <= 5)
+    .map((t) => {
+      const T = THRESHOLDS[t];
+      const reached = avg >= T - 1e-9;
+      return {
+        target: t,
+        threshold: T,
+        reached,
+        fives: reached ? 0 : gradesNeeded(sum, n, 5, T),
+        fours: reached ? 0 : gradesNeeded(sum, n, 4, T),
+      };
+    });
+  return {
+    partKey: key,
+    count: n,
+    average: r(avg),
+    plans,
+    ifOne: r((sum + 1) / (n + 1)),
+    ifTwo: r((sum + 2) / (n + 1)),
+    ifFive: r((sum + 5) / (n + 1)),
+  };
+}

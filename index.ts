@@ -1,5 +1,6 @@
 import { registerRootComponent } from 'expo';
 
+import './src/background'; // pozadinski zadatak mora biti definisan pri pokretanju
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

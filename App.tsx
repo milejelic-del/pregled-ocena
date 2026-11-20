@@ -8,6 +8,7 @@ import GradesScreen from './src/GradesScreen';
 import LoginScreen from './src/LoginScreen';
 import { currentClass, LoginError, parseStudents, PortalClient, PortalError, Student, StudentClass } from './src/portal';
 import * as storage from './src/storage';
+import * as bg from './src/background';
 import { DARK, LIGHT, ThemeChoice, ThemeContext } from './src/theme';
 
 type Mode = 'starting' | 'login' | 'grades';
@@ -33,6 +34,44 @@ export default function App() {
   useEffect(() => {
     storage.loadTheme().then((t) => t && setThemeChoice(t));
   }, []);
+  const [notifyOn, setNotifyOn] = useState(false);
+  const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    storage.loadNotify().then(setNotifyOn);
+  }, []);
+  const toggleNotify = async (on: boolean) => {
+    setNotifyMsg(null);
+    if (!on) {
+      await bg.disableNotifications();
+      setNotifyOn(false);
+      setNotifyMsg('Obaveštenja su isključena.');
+      return;
+    }
+    if (!(await storage.loadCredentials())) {
+      setNotifyMsg('Za proveru u pozadini aplikacija mora da zapamti prijavu. Odjavite se i prijavite ponovo sa uključenim „Zapamti me“.');
+      return;
+    }
+    try {
+      const r = await bg.enableNotifications();
+      setNotifyOn(r.ok);
+      setNotifyMsg(r.message);
+    } catch {
+      setNotifyMsg('Uključivanje obaveštenja nije uspelo.');
+    }
+  };
+  const checkNow = async () => {
+    setChecking(true);
+    setNotifyMsg(null);
+    try {
+      const r = await bg.checkForNewGrades();
+      setNotifyMsg(r.message);
+    } catch (e) {
+      setNotifyMsg(e instanceof PortalError ? e.message : 'Provera nije uspela.');
+    } finally {
+      setChecking(false);
+    }
+  };
   const changeTheme = (t: ThemeChoice) => {
     setThemeChoice(t);
     storage.saveTheme(t);
@@ -45,10 +84,12 @@ export default function App() {
   }, []);
 
   const loadGrades = useCallback(
-    async (cls: StudentClass, isDemo = demo) => {
+    async (cls: StudentClass, isDemo = demo, owner?: Student | null) => {
       const raw = isDemo ? demoData.grades : await client.current.getGrades(cls);
+      const parsed = parseGrades(raw);
       setSelected(cls);
-      setSubjects(parseGrades(raw));
+      setSubjects(parsed);
+      if (!isDemo && owner) bg.rememberSeen(owner, cls, parsed);
     },
     [demo],
   );
@@ -60,7 +101,7 @@ export default function App() {
       const st = list.find((s) => s.id === keepStudentId) ?? list[0];
       setStudents(list);
       setStudentId(st.id);
-      await loadGrades(currentClass(st)!, isDemo);
+      await loadGrades(currentClass(st)!, isDemo, st);
       setError(null);
       setMode('grades');
     },
@@ -110,6 +151,8 @@ export default function App() {
 
   const forget = async () => {
     await storage.deleteCredentials();
+    await bg.disableNotifications();
+    setNotifyOn(false);
     setSavedUsername(null);
     setError(null);
   };
@@ -152,7 +195,7 @@ export default function App() {
           const saved = await storage.loadCredentials();
           if (saved) await client.current.login(saved.username, saved.password);
         }
-        await loadGrades(selected);
+        await loadGrades(selected, demo, students.find((s) => s.id === studentId));
       }
     } catch (e) {
       fail(e);
@@ -200,13 +243,14 @@ export default function App() {
             onSelectStudent={(id) => loadAll(demo, id).catch(fail)}
             onSelectClass={(c) => {
               setRefreshing(true);
-              loadGrades(c)
+              loadGrades(c, demo, student)
                 .catch(fail)
                 .finally(() => setRefreshing(false));
             }}
             onLogout={logout}
             themeChoice={themeChoice}
             onThemeChange={changeTheme}
+            notify={{ on: notifyOn, message: notifyMsg, checking, lastCheck: bg.lastCheck(), onToggle: toggleNotify, onCheckNow: checkNow }}
           />
         ) : (
           <LoginScreen

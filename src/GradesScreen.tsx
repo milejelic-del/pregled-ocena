@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { formatDate, GradeEntry, isRecent, Overview, PART_NAMES, PartSummary, Subject } from './grades';
+import { calculate, formatDate, GradeEntry, isRecent, Overview, PART_NAMES, PartSummary, Subject } from './grades';
 import TrendChart from './TrendChart';
 import { Student, StudentClass } from './portal';
 import { avgColor, cardStyle, fmtAvg, GRADE_COLORS, Palette, ThemeChoice, useTheme } from './theme';
 import ThemePicker from './ThemePicker';
+import NotifyCard, { NotifyProps } from './NotifyCard';
 
 interface Props {
   students: Student[];
@@ -23,6 +24,7 @@ interface Props {
   onLogout: () => void;
   themeChoice: ThemeChoice;
   onThemeChange: (t: ThemeChoice) => void;
+  notify: NotifyProps;
 }
 
 function Chip({ g, small }: { g: GradeEntry; small?: boolean }) {
@@ -73,6 +75,47 @@ function Final({ p }: { p: PartSummary | null }) {
   return <Text style={st.muted}>–</Text>;
 }
 
+function plural(n: number, one: string, few: string, many: string) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+
+function CalcBox({ s }: { s: Subject }) {
+  const C = useTheme();
+  const st = useMemo(() => makeStyles(C), [C]);
+  const c = calculate(s);
+  if (!c) return null;
+  const now = c.plans.find((p) => p.reached)?.target ?? 1;
+  const goals = c.plans.filter((p) => !p.reached).reverse().slice(0, 2); // najbliži ciljevi
+  const n = (x: number, w: [string, string, string]) => `${x} ${plural(x, ...w)}`;
+  return (
+    <View style={st.calc}>
+      <Text style={st.calcHead}>🎯 ŠTA TREBA · {PART_NAMES[c.partKey].toLowerCase()}</Text>
+      <Text style={st.detailMain}>
+        Sada: prosek <Text style={{ fontWeight: '800', color: avgColor(c.average, C).fg }}>{fmtAvg(c.average)}</Text> iz {n(c.count, ['ocene', 'ocene', 'ocena'])}, to je ocena{' '}
+        <Text style={{ fontWeight: '800' }}>{now}</Text>.
+      </Text>
+      {goals.length === 0 ? (
+        <Text style={[st.small, { marginTop: 4 }]}>Ocena 5 je obezbeđena. Bravo! 🎉</Text>
+      ) : (
+        goals.map((g) => (
+          <Text key={g.target} style={[st.small, { marginTop: 4 }]}>
+            Za <Text style={{ fontWeight: '800' }}>{g.target}</Text> (prosek {fmtAvg(g.threshold)}):{' '}
+            {g.fives ? n(g.fives, ['petica', 'petice', 'petica']) : ''}
+            {g.fours ? ` ili ${n(g.fours, ['četvorka', 'četvorke', 'četvorki'])}` : ''}
+            {Math.max(g.fives ?? 0, g.fours ?? 0) > 1 ? ' zaredom' : ''}
+          </Text>
+        ))
+      )}
+      <Text style={[st.small, st.muted, { marginTop: 6 }]}>
+        Sledeća ocena: 5 → {fmtAvg(c.ifFive)} · 2 → {fmtAvg(c.ifTwo)} · 1 → {fmtAvg(c.ifOne)}
+      </Text>
+    </View>
+  );
+}
+
 function SubjectCard({ s }: { s: Subject }) {
   const C = useTheme();
   const st = useMemo(() => makeStyles(C), [C]);
@@ -116,6 +159,7 @@ function SubjectCard({ s }: { s: Subject }) {
       })}
       {open ? (
         <View style={st.details}>
+          <CalcBox s={s} />
           {(['1', '2'] as const).map((k) =>
             s.parts[k].grades.length ? (
               <View key={k}>
@@ -340,6 +384,7 @@ export default function GradesScreen(p: Props) {
         </>
       )}
       {p.subjects.length ? <TrendChart subjects={p.subjects} /> : null}
+      {!p.demo ? <NotifyCard {...p.notify} /> : null}
       <ThemePicker value={p.themeChoice} onChange={p.onThemeChange} />
       <Text style={st.footer}>Podaci se preuzimaju sa moj.esdnevnik.rs i ostaju samo na ovom telefonu.{'\n'}Povucite nadole za osvežavanje.</Text>
     </ScrollView>
@@ -411,6 +456,8 @@ const makeStyles = (C: Palette) =>
   hint: { color: C.muted, fontSize: 11, textAlign: 'right', marginTop: 4 },
   details: { marginTop: 10, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 6 },
   detailsHead: { color: C.muted, fontWeight: '700', fontSize: 13, marginTop: 10, marginBottom: 2 },
+  calc: { backgroundColor: C.pillBg, borderRadius: 12, padding: 12, marginTop: 8 },
+  calcHead: { color: C.pillText, fontWeight: '800', fontSize: 12, letterSpacing: 0.4, marginBottom: 4 },
   detailRow: { flexDirection: 'row', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.divider, alignItems: 'flex-start' },
   detailMain: { color: C.text, fontSize: 14 },
   note: { color: C.text, fontSize: 13, fontStyle: 'italic', marginTop: 2 },

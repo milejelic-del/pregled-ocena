@@ -62,3 +62,20 @@ export async function saveTheme(v: 'system' | 'light' | 'dark'): Promise<void> {
     /* web/probni prikaz */
   }
 }
+
+// Obaveštenja o novim ocenama (uključeno / isključeno)
+const NOTIFY_KEY = 'ednevnik_notify';
+export async function loadNotify(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(NOTIFY_KEY)) === '1';
+  } catch {
+    return false;
+  }
+}
+export async function saveNotify(on: boolean): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(NOTIFY_KEY, on ? '1' : '0');
+  } catch {
+    /* web/probni prikaz */
+  }
+}
