@@ -1,0 +1,46 @@
+name: Provera pokretanja (emulator)
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Android APK"]
+    types: [completed]
+jobs:
+  smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Preuzmi APK
+        run: curl -fsSL -o app.apk https://github.com/${{ github.repository }}/releases/download/latest/pregled-ocena.apk
+      - name: Pokreni na emulatoru
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: |
+            adb install -r app.apk
+            adb logcat -c
+            adb shell monkey -p rs.pregledocena.app -c android.intent.category.LAUNCHER 1
+            sleep 25
+            (adb shell pidof rs.pregledocena.app && echo "REZULTAT: RADI") || echo "REZULTAT: PAO"
+            adb logcat -d -b crash > crash.txt || true
+            adb logcat -d -s ReactNativeJS:V ReactNative:V > js.txt || true
+            adb logcat -d '*:E' > errors.txt || true
+            adb exec-out screencap -p > ekran.png || true
+            echo "=== CRASH ==="; head -80 crash.txt
+            echo "=== JS ==="; head -60 js.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-logs
+          path: |
+            crash.txt
+            errors.txt
+            js.txt
+            ekran.png
