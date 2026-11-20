@@ -90,6 +90,16 @@ test('html portal: no /api, data embedded in pages', async () => {
   assert.equal(vers.final?.finalLabel, 'истиче се');
   const old = st[0].classes.find((k) => k.yearLabel === '24/25')!;
   assert.ok(old.switchHref!.includes('student=6001'));
+  // promena godine mora da promeni podatke, i povratak na aktuelnu da ih vrati
+  const oldMat = parseGrades(await c.getGrades(old)).find((s) => s.name === 'Математика')!;
+  assert.ok(oldMat.allGrades[0].date.startsWith('2024'), 'stara godina ima stare datume');
+  assert.notDeepEqual(oldMat.allGrades.map((g) => g.value), mat.allGrades.map((g) => g.value));
+  const backMat = parseGrades(await c.getGrades(cur)).find((s) => s.name === 'Математика')!;
+  assert.deepEqual(backMat.allGrades.map((g) => g.value), mat.allGrades.map((g) => g.value));
+  const music = st[0].classes.find((k) => k.section === 'II клавир')!;
+  await c.getGrades(music);
+  const again = parseGrades(await c.getGrades(old)).find((s) => s.name === 'Математика')!;
+  assert.ok(again.allGrades[0].date.startsWith('2024'));
   const report = await c.diagnose();
   assert.ok(report.includes('/api/students -> 404'));
   assert.ok(/prepoznato ocena: [1-9]/.test(report), report);

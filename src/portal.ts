@@ -38,6 +38,8 @@ export interface StudentClass {
   schoolName: string;
   /** HTML način rada: link koji na portalu aktivira ovaj razred. */
   switchHref?: string;
+  /** HTML način rada: stabilan ključ razreda (učenik|škola|godina|odeljenje). */
+  portalKey?: string;
 }
 
 export interface Student {
@@ -56,6 +58,21 @@ export class PortalClient {
   loggedIn = false;
   /** 'api' = stare JSON adrese, 'html' = podaci iz stranica portala */
   mode: 'api' | 'html' | null = null;
+  /** ključ razreda -> ID za ?student=N (uči se iz menija na svakoj stranici) */
+  private knownIds = new Map<string, string>();
+  /** razred koji je trenutno aktivan na portalu (sesija) */
+  private serverActive: string | null = null;
+
+  private learnMenu(html: string) {
+    const rows = parseStudentsMenu(html, this.baseUrl);
+    for (const r of rows) {
+      const key = classKey(r);
+      const q = r.switchHref.match(/[?&]student=(\d+)/);
+      if (q) this.knownIds.set(key, q[1]);
+      if (r.active) this.serverActive = key;
+    }
+    return rows.length;
+  }
   constructor(private baseUrl: string = DEFAULT_BASE_URL, private fetchFn: FetchFn = fetch) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
   }
@@ -167,6 +184,7 @@ export class PortalClient {
     const props = componentProps(html);
     const activeScid = Number(props.find((p) => p.name === ':student-class-id')?.raw ?? 0) || 0;
     const rows = parseStudentsMenu(html, this.baseUrl);
+    this.learnMenu(html);
     const byStudent = new Map<string, Student>();
     rows.forEach((r, i) => {
       let st = byStudent.get(r.studentId);
@@ -183,6 +201,7 @@ export class PortalClient {
         schoolId: r.schoolName,
         schoolName: r.schoolName,
         switchHref: r.switchHref,
+        portalKey: classKey(r),
       });
     });
     if (!byStudent.size) throw new PortalError('Na početnoj strani portala nije pronađen spisak učenika. Pokrenite „Dijagnostiku“.');
@@ -191,12 +210,12 @@ export class PortalClient {
 
   async getGrades(cls: StudentClass): Promise<unknown> {
     if (this.mode === 'api') return this.getJson(`/api/grades/${Math.trunc(cls.studentClassId)}`);
-    if (cls.switchHref) await this.getHtml(cls.switchHref); // aktivira razred na portalu
-    let page;
+    let page: { html: string; url: string } | null = null;
     try {
-      page = await this.getHtml('/grades');
+      page = await this.openGradesFor(cls);
     } catch (e) {
       if (e instanceof LoginError) throw e;
+      if (e instanceof PortalError && /prebac/.test(e.message)) throw e;
       page = null;
     }
     if (page) {
@@ -233,6 +252,28 @@ export class PortalClient {
     throw new PortalError(
       'Prijava je uspela, ali ocene nisu pronađene na stranici portala. Dodirnite „Dijagnostika“ na ekranu za prijavu i pošaljite rezultat.',
     );
+  }
+
+  /** Otvara /grades tako da je na portalu aktivan traženi razred. */
+  private async openGradesFor(cls: StudentClass): Promise<{ html: string; url: string }> {
+    const key = cls.portalKey;
+    if (!key || key === this.serverActive) {
+      const page = await this.getHtml('/grades');
+      this.learnMenu(page.html);
+      if (!key || this.serverActive === key || !this.knownIds.has(key)) return page;
+    }
+    const id = this.knownIds.get(key!);
+    if (!id) throw new PortalError('Ne mogu da prebacim na ovaj razred. Osvežite (povucite nadole) pa pokušajte ponovo.');
+    // portal menja aktivni razred preko ?student=N (na stranici ocena, a rezervno na početnoj)
+    let page = await this.getHtml(`/grades?student=${id}`);
+    const found = this.learnMenu(page.html);
+    if (found && this.serverActive !== key) {
+      await this.getHtml(`/?student=${id}`).then((p) => this.learnMenu(p.html));
+      page = await this.getHtml('/grades');
+      this.learnMenu(page.html);
+    }
+    if (!found) this.serverActive = key;
+    return page;
   }
 
   /** Izveštaj o strukturi stranica — bez imena, ocena i drugih ličnih podataka. */
@@ -307,6 +348,10 @@ function describeProps(lines: string[], page: string, props: ReturnType<typeof c
     const desc = p.json !== undefined ? shapeOf(p.json) : /url/i.test(p.name) ? maskPath(p.raw) : `${typeof p.raw}(${p.raw.length})`;
     lines.push(`  <${p.tag} ${p.name}> ${desc.slice(0, 600)}`);
   }
+}
+
+function classKey(r: { studentId: string; schoolName: string; yearLabel: string; section: string }): string {
+  return [r.studentId, r.schoolName, r.yearLabel, r.section].join('|');
 }
 
 function isLoginUrl(url: string | undefined): boolean {

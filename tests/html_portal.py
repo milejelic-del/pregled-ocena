@@ -22,11 +22,11 @@ CLASSES = [
 ]
 
 
-def menu(active):
+def menu(active, path=""):
     links = ""
     for cid, label, school in CLASSES:
         y, sec = label.split(" ", 1)
-        href = BASE if cid == active else f"{BASE}?student={cid}"
+        href = f"{BASE}{path}" if cid == active else f"{BASE}{path}?student={cid}"
         cls = " active " if cid == active else " "
         links += (
             f'<a href="{href}" class="student-school-class-wrap{cls}">'
@@ -67,8 +67,23 @@ def grade_item(g):
     )
 
 
+def courses_for(active):
+    import copy
+    courses = copy.deepcopy(demo_data.GRADES)
+    if active == "6001":  # ranija godina: drugačije ocene i datumi
+        for c in courses:
+            c["course"] = c["course"]
+            for part in c["parts"].values():
+                for g in part["grades"]:
+                    g["date"] = str(int(g["date"][:4]) - 1) + g["date"][4:]
+                    if g["grade"]:
+                        g["grade"] = max(1, g["grade"] - 1)
+                        g["fullGrade"] = f"оцена ({g['grade']})"
+    return courses
+
+
 def subject_page(idx):
-    courses = demo_data.GRADES
+    courses = courses_for(session["active"])
     c = courses[idx]
     dd = "".join(
         f'<a href="{BASE}/grades/{1000 + i}/show" class="dropdown-item">\n {h.escape(x["course"])}\n </a> '
@@ -90,7 +105,7 @@ def subject_page(idx):
             f' <div class="final-grade-field">{fin_html}</div></div> <div class="category-items-wrap">{items}</div></div>'
         )
     return (
-        '<html><script src="/js/app.js?id=abc"></script><div class="main-content container">'
+        '<html><script src="/js/app.js?id=abc"></script>' + menu(session["active"], "/grades") + '<div class="main-content container">'
         f'<div class="dropdown-menu"><a href="{BASE}/grades/0/show" class="dropdown-item">Сви предмети</a> {dd}</div>'
         f'<div class="sections-wrap"><article class="es-card mb-3"><h4 class="es__card__title mb-4">{h.escape(c["course"])}</h4>'
         f'<div class="section-wrap"><div class="categories-wrap">{cats}</div></div></article></div></div></html>'
@@ -126,8 +141,7 @@ def login_post():
 def home():
     if (g := guard()):
         return g
-    if request.args.get("student"):
-        session["active"] = request.args["student"]
+    # kao na pravom portalu: ?student=N na početnoj NE menja razred za ocene
     events = h.escape(json.dumps([{"start": "2025-11-20", "title": "x"}]), quote=True)
     return (
         f'<html><body><top-notification-icon name="messages" url="{BASE}/messages" :notifications-count="0"></top-notification-icon>'
@@ -139,6 +153,8 @@ def home():
 def grades():
     if (g := guard()):
         return g
+    if request.args.get("student"):
+        session["active"] = request.args["student"]
     return subject_page(0)
 
 

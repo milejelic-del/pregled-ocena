@@ -124,3 +124,71 @@ export function overview(subjects: Subject[]): Overview {
     atRisk: numeric.filter((s) => s.average !== null && s.average < 2.5).map((s) => s.name),
   };
 }
+
+// ---------------- Trend proseka kroz vreme ----------------
+
+export type TrendMode = 'month' | 'quarter';
+
+export interface TrendPoint {
+  key: string;
+  label: string;
+  average: number | null; // prosek ocena dobijenih u tom periodu
+  cumulative: number | null; // ukupan prosek do kraja perioda
+  count: number;
+}
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'avg', 'sep', 'okt', 'nov', 'dec'];
+
+/** Tromesečja školske godine: I (sep–okt), II (nov–dec), III (jan–mar), IV (apr–jun). */
+function quarterOf(month: number): { idx: number; label: string } {
+  if (month >= 9 && month <= 10) return { idx: 1, label: 'I trom.' };
+  if (month >= 11) return { idx: 2, label: 'II trom.' };
+  if (month <= 3) return { idx: 3, label: 'III trom.' };
+  return { idx: 4, label: 'IV trom.' };
+}
+
+export function trend(grades: GradeEntry[], mode: TrendMode): TrendPoint[] {
+  const vals = grades.filter((g) => g.value && /^\d{4}-\d{2}/.test(g.date)).sort((a, b) => a.date.localeCompare(b.date));
+  const buckets = new Map<string, { label: string; sum: number; n: number; order: string }>();
+  for (const g of vals) {
+    const y = Number(g.date.slice(0, 4));
+    const m = Number(g.date.slice(5, 7));
+    const schoolYear = m >= 8 ? y : y - 1;
+    let key: string;
+    let label: string;
+    if (mode === 'month') {
+      key = g.date.slice(0, 7);
+      label = MONTHS[m - 1];
+    } else {
+      const q = quarterOf(m);
+      key = `${schoolYear}-Q${q.idx}`;
+      label = q.label;
+    }
+    const b = buckets.get(key) ?? { label, sum: 0, n: 0, order: key };
+    b.sum += g.value!;
+    b.n += 1;
+    buckets.set(key, b);
+  }
+  let cumSum = 0;
+  let cumN = 0;
+  return [...buckets.entries()]
+    .sort((a, b) => a[1].order.localeCompare(b[1].order))
+    .map(([key, b]) => {
+      cumSum += b.sum;
+      cumN += b.n;
+      return {
+        key,
+        label: b.label,
+        average: Math.round((b.sum / b.n) * 100) / 100,
+        cumulative: Math.round((cumSum / cumN) * 100) / 100,
+        count: b.n,
+      };
+    });
+}
+
+/** Da li je ocena „nova“ (poslednjih N dana). */
+export function isRecent(g: GradeEntry, days = 7, now = new Date()): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(g.date)) return false;
+  const d = new Date(g.date.slice(0, 10) + 'T12:00:00');
+  return (now.getTime() - d.getTime()) / 86400000 <= days && d.getTime() <= now.getTime() + 86400000;
+}

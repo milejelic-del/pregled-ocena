@@ -6,15 +6,28 @@
  * Spisak dece i razreda je u meniju „students-list“ kao linkovi `?student=N`.
  */
 
+const NAMED: Record<string, string> = {
+  quot: '"', apos: "'", lt: '<', gt: '>', amp: '&', nbsp: ' ', bull: '•', middot: '·', ndash: '–', mdash: '—',
+  hellip: '…', laquo: '«', raquo: '»', bdquo: '„', ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’', sbquo: '‚',
+  scaron: 'š', Scaron: 'Š', ccaron: 'č', Ccaron: 'Č', zcaron: 'ž', Zcaron: 'Ž', cacute: 'ć', Cacute: 'Ć',
+  dstrok: 'đ', Dstrok: 'Đ', deg: '°', times: '×', euro: '€', copy: '©', shy: '',
+};
+
+function decodeOnce(s: string): string {
+  return s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);?/g, (m, e: string) => {
+    if (e[0] === '#') {
+      const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+    }
+    return e in NAMED ? NAMED[e] : m;
+  });
+}
+
+/** Dekodira HTML entitete, i dvostruko kodirane (npr. „&amp;bull;“). */
 export function decodeEntities(s: string): string {
-  return s
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;|&apos;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&');
+  let out = decodeOnce(s);
+  for (let i = 0; i < 2 && /&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/.test(out); i++) out = decodeOnce(out);
+  return out;
 }
 
 export function textOf(html: string): string {
@@ -209,7 +222,7 @@ export function parseSubjectPage(html: string, fallbackName: string, sequence: n
       const label = firstText(item, 'name');
       const subtitleHtml = item.match(/<div class="name-subtitle"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ?? '';
       const date = toIsoDate(textOf(subtitleHtml));
-      const category = textOf(subtitleHtml.match(/<div class="name-subtitle-suffix"[^>]*>([\s\S]*?)(?:<\/div>|$)/)?.[1] ?? '').replace(/^[•·\s]+/, '');
+      const category = textOf(subtitleHtml.match(/<div class="name-subtitle-suffix"[^>]*>([\s\S]*?)(?:<\/div>|$)/)?.[1] ?? '').replace(/^[•·\s\u00a0]+/, '').trim();
       const note = firstText(item, 'category-item-bottom-note');
       const v = /^\d$/.test(symbol) ? Number(symbol) : null;
       if (v) numeric = true;

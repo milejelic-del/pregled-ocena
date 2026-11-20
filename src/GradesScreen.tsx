@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { formatDate, GradeEntry, Overview, PART_NAMES, PartSummary, Subject } from './grades';
+import { formatDate, GradeEntry, isRecent, Overview, PART_NAMES, PartSummary, Subject } from './grades';
+import TrendChart from './TrendChart';
 import { Student, StudentClass } from './portal';
 import { avgColor, cardStyle, fmtAvg, GRADE_COLORS, Palette, ThemeChoice, useTheme } from './theme';
 import ThemePicker from './ThemePicker';
@@ -77,10 +78,22 @@ function SubjectCard({ s }: { s: Subject }) {
   const st = useMemo(() => makeStyles(C), [C]);
   const card = st.card;
   const [open, setOpen] = useState(false);
+  const accent = s.average ? GRADE_COLORS[Math.min(5, Math.max(1, Math.round(s.average)))] : C.line;
+  const newCount = s.allGrades.filter((g) => isRecent(g)).length;
   return (
-    <Pressable style={[card, st.subject]} onPress={() => setOpen(!open)} accessibilityRole="button">
+    <Pressable style={[card, st.subject, { borderLeftWidth: 5, borderLeftColor: accent }]} onPress={() => setOpen(!open)} accessibilityRole="button">
       <View style={st.subjHead}>
-        <Text style={st.subjName}>{s.name}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={st.subjName}>
+            {s.name}
+            {newCount ? <Text style={st.newBadge}>{`  NOVO ${newCount}`}</Text> : null}
+          </Text>
+          {s.average ? (
+            <View style={st.progress}>
+              <View style={[st.progressFill, { width: `${((s.average - 1) / 4) * 100}%`, backgroundColor: accent }]} />
+            </View>
+          ) : null}
+        </View>
         {s.final ? (
           <View style={st.subjFinal}>
             <Text style={st.tiny}>ZAKLJ.</Text>
@@ -141,7 +154,19 @@ export default function GradesScreen(p: Props) {
   const st = useMemo(() => makeStyles(C), [C]);
   const card = st.card;
   const [showOlder, setShowOlder] = useState(false);
+  const [sort, setSort] = useState<'order' | 'best' | 'worst' | 'latest'>('order');
   const { summary } = p;
+  const sorted = useMemo(() => {
+    const list = [...p.subjects];
+    const avg = (x: Subject) => x.average ?? (sort === 'best' ? -1 : 99);
+    if (sort === 'best') list.sort((a, b) => avg(b) - avg(a));
+    if (sort === 'worst') list.sort((a, b) => avg(a) - avg(b));
+    if (sort === 'latest') {
+      const lastDate = (x: Subject) => x.allGrades.reduce((m, g) => (g.date > m ? g.date : m), '');
+      list.sort((a, b) => lastDate(b).localeCompare(lastDate(a)));
+    }
+    return list;
+  }, [p.subjects, sort]);
   const maxCount = Math.max(1, ...Object.values(summary.distribution));
   const initials = p.student.fullName
     .split(/\s+/)
@@ -163,18 +188,37 @@ export default function GradesScreen(p: Props) {
         </Pressable>
       </View>
 
-      <View style={[card, st.hero]}>
-        <View style={st.avatar}>
-          <Text style={st.avatarText}>{initials}</Text>
+      <View style={[card, st.heroCard]}>
+        <View style={st.hero}>
+          <View style={st.avatar}>
+            <Text style={st.avatarText}>{initials}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={st.heroName}>{p.student.fullName}</Text>
+            <Text style={st.heroSub}>
+              {p.selected.schoolName} · razred <Text style={{ fontWeight: '800' }}>{p.selected.section}</Text> · {p.selected.yearLabel}
+            </Text>
+            {!p.isCurrent ? <Text style={st.warnPill}>ranija godina</Text> : null}
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={st.name}>{p.student.fullName}</Text>
-          <Text style={st.muted}>
-            {p.selected.schoolName} · razred <Text style={{ fontWeight: '700', color: C.text }}>{p.selected.section}</Text> ·{' '}
-            {p.selected.yearLabel}
-          </Text>
-          {!p.isCurrent ? <Text style={st.warnPill}>ranija godina</Text> : null}
-        </View>
+        {p.subjects.length ? (
+          <View style={st.heroStats}>
+            <View style={st.heroStat}>
+              <Text style={st.heroValue}>{fmtAvg(summary.overallAverage)}</Text>
+              <Text style={st.heroLabel}>prosek</Text>
+            </View>
+            <View style={st.heroDivider} />
+            <View style={st.heroStat}>
+              <Text style={st.heroValue}>{summary.gradeCount}</Text>
+              <Text style={st.heroLabel}>ocena</Text>
+            </View>
+            <View style={st.heroDivider} />
+            <View style={st.heroStat}>
+              <Text style={st.heroValue}>{summary.finalAverage ? fmtAvg(summary.finalAverage) : '–'}</Text>
+              <Text style={st.heroLabel}>zaključne</Text>
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {p.students.length > 1 ? (
@@ -233,18 +277,7 @@ export default function GradesScreen(p: Props) {
         <>
           <View style={st.statsRow}>
             <View style={[card, st.stat]}>
-              <Text style={st.statLabel}>PROSEK</Text>
-              <View style={{ alignItems: 'flex-start', marginTop: 6 }}>
-                <Avg v={summary.overallAverage} big />
-              </View>
-              {summary.finalAverage ? (
-                <Text style={[st.small, { marginTop: 6 }]}>
-                  Zaključne: {fmtAvg(summary.finalAverage)} ({summary.finalsCount})
-                </Text>
-              ) : null}
-            </View>
-            <View style={[card, st.stat]}>
-              <Text style={st.statLabel}>OCENA: {summary.gradeCount}</Text>
+              <Text style={st.statLabel}>RASPODELA OCENA</Text>
               {[5, 4, 3, 2, 1].map((n) => (
                 <View key={n} style={st.distRow}>
                   <View style={[st.chip, st.chipSm, { backgroundColor: GRADE_COLORS[n] }]}>
@@ -279,6 +312,7 @@ export default function GradesScreen(p: Props) {
                 <Text style={st.recentName} numberOfLines={1}>
                   {subject}
                 </Text>
+                {isRecent(grade) ? <Text style={st.newBadge}>NOVO</Text> : null}
                 <Text style={st.small}>{formatDate(grade.date)}</Text>
               </View>
             ))}
@@ -286,11 +320,26 @@ export default function GradesScreen(p: Props) {
 
           <Text style={st.section}>Ocene po predmetima</Text>
           <Text style={[st.small, { marginBottom: 2 }]}>I = prvo, II = drugo polugodište · desno je prosek</Text>
-          {p.subjects.map((s) => (
+          <View style={st.tabs}>
+            {(
+              [
+                ['order', 'Po redu'],
+                ['best', 'Najbolji'],
+                ['worst', 'Najslabiji'],
+                ['latest', 'Najnovije'],
+              ] as const
+            ).map(([k, label]) => (
+              <Pressable key={k} onPress={() => setSort(k)} style={[st.tab, sort === k && st.tabActive]}>
+                <Text style={[st.tabText, sort === k && st.tabTextActive]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {sorted.map((s) => (
             <SubjectCard key={s.name} s={s} />
           ))}
         </>
       )}
+      {p.subjects.length ? <TrendChart subjects={p.subjects} /> : null}
       <ThemePicker value={p.themeChoice} onChange={p.onThemeChange} />
       <Text style={st.footer}>Podaci se preuzimaju sa moj.esdnevnik.rs i ostaju samo na ovom telefonu.{'\n'}Povucite nadole za osvežavanje.</Text>
     </ScrollView>
@@ -306,9 +355,20 @@ const makeStyles = (C: Palette) =>
   pill: { backgroundColor: C.pillBg, color: C.pillText, fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
   logout: { borderWidth: 1, borderColor: C.line, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: C.card },
   logoutText: { color: C.text, fontSize: 13 },
+  heroCard: { backgroundColor: C.primary, borderWidth: 0 },
   hero: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: C.avatar, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontWeight: '700', fontSize: 18 },
+  heroName: { fontSize: 21, fontWeight: '800', color: C.onPrimary },
+  heroSub: { color: C.onPrimary, opacity: 0.85, fontSize: 14, marginTop: 2 },
+  heroStats: { flexDirection: 'row', marginTop: 16, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 12, paddingVertical: 10 },
+  heroStat: { flex: 1, alignItems: 'center' },
+  heroValue: { color: C.onPrimary, fontSize: 22, fontWeight: '800' },
+  heroLabel: { color: C.onPrimary, opacity: 0.8, fontSize: 12, marginTop: 2 },
+  heroDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 4 },
+  newBadge: { color: '#1f9d55', fontSize: 11, fontWeight: '800' },
+  progress: { height: 4, backgroundColor: C.subtle, borderRadius: 2, marginTop: 6, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 2 },
+  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: C.onPrimary, fontWeight: '700', fontSize: 18 },
   name: { fontSize: 20, fontWeight: '700', color: C.text, marginBottom: 2 },
   muted: { color: C.muted, fontSize: 14 },
   small: { color: C.muted, fontSize: 12 },
