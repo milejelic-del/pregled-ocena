@@ -123,3 +123,121 @@ export function shapeOf(v: unknown, depth = 0): string {
 }
 
 export const maskPath = (url: string) => url.replace(/^https?:\/\/[^/]+/, '').replace(/\d+/g, 'N');
+
+// ---------------- Stranice sa ocenama (/grades i /grades/{id}/show) ----------------
+
+/** Linkovi ka predmetima iz padajućeg menija: [{id, name}] (bez „Svi predmeti“ = 0). */
+export function parseSubjectLinks(html: string): { id: string; name: string }[] {
+  const out: { id: string; name: string }[] = [];
+  const seen = new Set<string>();
+  const re = /<a[^>]*href="[^"]*\/grades\/(\d+)\/show[^"]*"[^>]*>([\s\S]*?)<\/a>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const [, id, inner] = m;
+    if (id === '0' || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, name: textOf(inner) });
+  }
+  return out;
+}
+
+/** "26. 11. 2025." -> "2025-11-26" */
+export function toIsoDate(s: string): string {
+  const m = s.match(/(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})/);
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '';
+}
+
+/** Deli HTML na blokove koji počinju elementom sa datom klasom (grubo, ali dovoljno za ovu stranicu). */
+function blocks(html: string, cls: string): string[] {
+  const re = new RegExp(`<div class="${cls}(?:\\s[^"]*)?"`, 'g');
+  const idx: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) idx.push(m.index);
+  return idx.map((start, i) => html.slice(start, idx[i + 1] ?? html.length));
+}
+
+function firstText(html: string, cls: string): string {
+  const m = html.match(new RegExp(`<div class="${cls}(?:\\s[^"]*)?"[^>]*>([\\s\\S]*?)<\\/div>`));
+  return m ? textOf(m[1]) : '';
+}
+
+const num = (s: string) => {
+  const m = s.match(/(\d+[.,]\d+|\d+)/);
+  return m ? Number(m[1].replace(',', '.')) : null;
+};
+
+/**
+ * Jedan predmet sa stranice /grades/{id}/show, u obliku koji razume parseGrades():
+ * { course, parts: { '1': { grades:[...], average, final } } }
+ */
+export function parseSubjectPage(html: string, fallbackName: string, sequence: number): any | null {
+  const title = html.match(/<h4 class="es__card__title[^"]*"[^>]*>([\s\S]*?)<\/h4>/);
+  const name = (title ? textOf(title[1]) : '') || fallbackName;
+  const cats = blocks(html, 'category-wrap');
+  if (!cats.length && !/category-item-wrap/.test(html)) return null;
+  const parts: Record<string, any> = {};
+  let numeric = false;
+  cats.forEach((cat, i) => {
+    const titleHtml = cat.match(/<div class="category-title"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? '';
+    const partName = textOf(titleHtml.replace(/<span[\s\S]*?<\/span>/g, '')).toLowerCase();
+    let key = String(i + 1);
+    if (/прв|prv/.test(partName)) key = '1';
+    else if (/друг|drug/.test(partName)) key = '2';
+    const finalBox = cat.match(/<div class="final-grade-field"[^>]*>([\s\S]*?)<div class="category-items-wrap/)?.[1] ?? '';
+    let average: number | null = null;
+    let final: any = null;
+    for (const sm of finalBox.matchAll(/<small[^>]*>([\s\S]*?)<\/small>/g)) {
+      const t = textOf(sm[1]);
+      if (/закљ|zaklj/i.test(t)) {
+        const after = t.split(':').slice(1).join(':').trim() || t;
+        const v = num(after);
+        final = { name: after.replace(/\(?\d\)?/g, '').trim(), value: v && v >= 1 && v <= 5 ? Math.round(v) : 0 };
+      } else if (/ср|sr|просек|prosek/i.test(t)) {
+        average = num(t.split(':').slice(1).join(':')) ?? num(t);
+      }
+    }
+    // zaključna ocena ponekad stoji kao zaseban element bez <small>
+    if (!final) {
+      const f = textOf(finalBox);
+      if (/закљ|zaklj/i.test(f)) {
+        const v = num(f.split(/закључна|zaključna/i)[1] ?? '');
+        if (v && v >= 1 && v <= 5) final = { name: '', value: Math.round(v) };
+      }
+    }
+    const grades = blocks(cat, 'category-item-wrap').map((item) => {
+      const symbol = firstText(item, 'category-symbol');
+      const label = firstText(item, 'name');
+      const subtitleHtml = item.match(/<div class="name-subtitle"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ?? '';
+      const date = toIsoDate(textOf(subtitleHtml));
+      const category = textOf(subtitleHtml.match(/<div class="name-subtitle-suffix"[^>]*>([\s\S]*?)(?:<\/div>|$)/)?.[1] ?? '').replace(/^[•·\s]+/, '');
+      const note = firstText(item, 'category-item-bottom-note');
+      const v = /^\d$/.test(symbol) ? Number(symbol) : null;
+      if (v) numeric = true;
+      return {
+        descriptive: v === null,
+        date,
+        fullGrade: v ? `${label} (${v})` : label || symbol,
+        grade: v ?? 0,
+        gradeCategory: category,
+        note,
+      };
+    });
+    if (parts[key]) parts[key].grades.push(...grades);
+    else parts[key] = { grades, average, final };
+  });
+  return { course: name, sequence, classCourseGradeTypeId: numeric || !Object.keys(parts).length ? 1 : 2, parts };
+}
+
+/** Maskirani kostur HTML-a (samo tagovi i klase; tekst -> X, cifre -> N) za dijagnostiku. */
+export function maskedSkeleton(html: string, from: string, maxLen = 2500): string {
+  const i = html.indexOf(from);
+  if (i < 0) return '';
+  return html
+    .slice(i, i + maxLen * 4)
+    .replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>')
+    .replace(/<script[\s\S]*?<\/script>/g, '<script/>')
+    .replace(/\s(?:href|src)="[^"]*"/g, (a) => a.replace(/\d+/g, 'N').replace(/https?:\/\/[^/"]+/, ''))
+    .replace(/>([^<]+)</g, (_, t: string) => '>' + t.replace(/\d/g, 'N').replace(/[^\sN.,:;()\-–—•/]+/g, 'X').replace(/\s+/g, ' ') + '<')
+    .replace(/\s+/g, ' ')
+    .slice(0, maxLen);
+}

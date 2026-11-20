@@ -11,7 +11,16 @@
  * Kredencijali se nikad ne loguju.
  */
 
-import { componentProps, findCourseArrays, maskPath, parseStudentsMenu, shapeOf } from './html';
+import {
+  componentProps,
+  findCourseArrays,
+  maskedSkeleton,
+  maskPath,
+  parseStudentsMenu,
+  parseSubjectLinks,
+  parseSubjectPage,
+  shapeOf,
+} from './html';
 
 export const DEFAULT_BASE_URL = 'https://moj.esdnevnik.rs';
 
@@ -183,18 +192,43 @@ export class PortalClient {
   async getGrades(cls: StudentClass): Promise<unknown> {
     if (this.mode === 'api') return this.getJson(`/api/grades/${Math.trunc(cls.studentClassId)}`);
     if (cls.switchHref) await this.getHtml(cls.switchHref); // aktivira razred na portalu
-    for (const path of ['/grades', '/grades/0/show']) {
-      let page;
-      try {
-        page = await this.getHtml(path);
-      } catch (e) {
-        if (e instanceof LoginError) throw e;
-        continue;
-      }
+    let page;
+    try {
+      page = await this.getHtml('/grades');
+    } catch (e) {
+      if (e instanceof LoginError) throw e;
+      page = null;
+    }
+    if (page) {
+      // 1) podaci ugrađeni kao Vue svojstva (ako ih portal ikad vrati)
       for (const p of componentProps(page.html)) {
         const arrays = p.json ? findCourseArrays(p.json) : [];
         if (arrays.length) return arrays.sort((a, b) => b.length - a.length)[0];
       }
+      // 2) obične HTML stranice: spisak predmeta, pa stranica svakog predmeta
+      const links = parseSubjectLinks(page.html);
+      if (links.length) {
+        const courses: any[] = new Array(links.length).fill(null);
+        let next = 0;
+        const worker = async () => {
+          while (next < links.length) {
+            const i = next++;
+            const l = links[i];
+            try {
+              const sub = await this.getHtml(`/grades/${l.id}/show`);
+              courses[i] = parseSubjectPage(sub.html, l.name, i + 1) ?? { course: l.name, sequence: i + 1, parts: {} };
+            } catch (e) {
+              if (e instanceof LoginError) throw e;
+              courses[i] = { course: l.name, sequence: i + 1, parts: {} };
+            }
+          }
+        };
+        await Promise.all([worker(), worker(), worker(), worker()]);
+        if (courses.some((c) => c && Object.values(c.parts).some((p: any) => p.grades?.length))) return courses.filter(Boolean);
+        if (courses.length) return courses.filter(Boolean);
+      }
+      const single = parseSubjectPage(page.html, 'Predmet', 1);
+      if (single) return [single];
     }
     throw new PortalError(
       'Prijava je uspela, ali ocene nisu pronađene na stranici portala. Dodirnite „Dijagnostika“ na ekranu za prijavu i pošaljite rezultat.',
@@ -203,7 +237,7 @@ export class PortalClient {
 
   /** Izveštaj o strukturi stranica — bez imena, ocena i drugih ličnih podataka. */
   async diagnose(): Promise<string> {
-    const lines: string[] = [`verzija: 2`];
+    const lines: string[] = [`verzija: 3`];
     const check = async (path: string, json: boolean) => {
       try {
         const r = await this.req(path, json ? { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } } : {});
@@ -235,6 +269,29 @@ export class PortalClient {
         lines.push(`  linkovi ka ocenama: ${links.slice(0, 15).join(' ')}`);
         const scripts = [...pg.body.matchAll(/<script[^>]*src="([^"]*)"/g)].map((m) => maskPath(m[1]));
         lines.push(`  skripte: ${scripts.join(' ')}`);
+        const html = pg.body;
+        const count = (re: RegExp) => (html.match(re) ?? []).length;
+        lines.push(`  broj: dropdown-item ${count(/dropdown-item/g)}, category-wrap ${count(/class="category-wrap/g)}, category-item-wrap ${count(/category-item-wrap/g)}, table ${count(/<table/g)}, tr ${count(/<tr/g)}`);
+        const subjects = parseSubjectLinks(html);
+        lines.push(`  predmeta u meniju: ${subjects.length}`);
+        const inline = [...html.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+        const vars = [...new Set(inline.flatMap((t) => [...t.matchAll(/(window\.[A-Za-z_$][\w$]*|var\s+[A-Za-z_$][\w$]*|const\s+[A-Za-z_$][\w$]*)/g)].map((m) => m[1])))];
+        lines.push(`  inline skripte: ${inline.length}, promenljive: ${vars.slice(0, 20).join(' ')}`);
+        if (p === '/grades') {
+          lines.push(`  kostur glavnog dela: ${maskedSkeleton(html, 'main-content', 2500)}`);
+          if (subjects[0]) {
+            try {
+              const r = await this.req(`/grades/${subjects[0].id}/show`);
+              const sh = await r.text();
+              const parsed = parseSubjectPage(sh, 'x', 1);
+              const nGrades = parsed ? Object.values(parsed.parts).reduce((a: number, x: any) => a + x.grades.length, 0) : -1;
+              lines.push(`/grades/N/show (prvi predmet) -> ${r.status} ${maskPath(r.url ?? '')}, prepoznato ocena: ${nGrades}`);
+              lines.push(`  kostur: ${maskedSkeleton(sh, 'sections-wrap', 2000) || maskedSkeleton(sh, 'main-content', 2000)}`);
+            } catch {
+              lines.push('/grades/N/show -> greška');
+            }
+          }
+        }
         const apiRefs = [...new Set([...pg.body.matchAll(/["'](\/api\/[^"']{0,80})["']/g)].map((m) => maskPath(m[1])))];
         if (apiRefs.length) lines.push(`  /api u stranici: ${apiRefs.join(' ')}`);
       }
