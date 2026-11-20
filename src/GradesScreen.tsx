@@ -1,0 +1,337 @@
+import { useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { formatDate, GradeEntry, Overview, PART_NAMES, PartSummary, Subject } from './grades';
+import { Student, StudentClass } from './portal';
+import { avgColor, C, card, fmtAvg, GRADE_COLORS } from './theme';
+
+interface Props {
+  students: Student[];
+  student: Student;
+  selected: StudentClass;
+  currentYear: StudentClass[];
+  otherYears: StudentClass[];
+  isCurrent: boolean;
+  subjects: Subject[];
+  summary: Overview;
+  demo: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+  onSelectStudent: (id: number) => void;
+  onSelectClass: (c: StudentClass) => void;
+  onLogout: () => void;
+}
+
+function Chip({ g, small }: { g: GradeEntry; small?: boolean }) {
+  if (!g.value)
+    return (
+      <View style={[st.chip, st.chipDesc]}>
+        <Text style={st.chipDescText}>{g.label}</Text>
+      </View>
+    );
+  return (
+    <View style={[st.chip, small && st.chipSm, { backgroundColor: GRADE_COLORS[g.value] }]}>
+      <Text style={[st.chipText, small && { fontSize: 12 }]}>{g.value}</Text>
+    </View>
+  );
+}
+
+function Avg({ v, big }: { v: number | null; big?: boolean }) {
+  const c = avgColor(v);
+  return (
+    <View style={[st.avg, { backgroundColor: c.bg }, big && { paddingHorizontal: 12, paddingVertical: 4 }]}>
+      <Text style={[st.avgText, { color: c.fg }, big && { fontSize: 28 }]}>{fmtAvg(v)}</Text>
+    </View>
+  );
+}
+
+function Final({ p }: { p: PartSummary | null }) {
+  if (p?.finalValue)
+    return (
+      <View style={[st.final, { backgroundColor: GRADE_COLORS[p.finalValue] }]}>
+        <Text style={st.finalText}>{p.finalValue}</Text>
+      </View>
+    );
+  if (p?.finalLabel)
+    return (
+      <View style={[st.chip, st.chipDesc]}>
+        <Text style={st.chipDescText}>{p.finalLabel}</Text>
+      </View>
+    );
+  return <Text style={st.muted}>–</Text>;
+}
+
+function SubjectCard({ s }: { s: Subject }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Pressable style={[card, st.subject]} onPress={() => setOpen(!open)} accessibilityRole="button">
+      <View style={st.subjHead}>
+        <Text style={st.subjName}>{s.name}</Text>
+        {s.final ? (
+          <View style={st.subjFinal}>
+            <Text style={st.tiny}>ZAKLJ.</Text>
+            <Final p={s.final} />
+          </View>
+        ) : null}
+        <Avg v={s.average} />
+      </View>
+      {(['1', '2'] as const).map((k) => {
+        const p = s.parts[k];
+        return (
+          <View key={k} style={st.partRow}>
+            <Text style={st.partLabel}>{k === '1' ? 'I' : 'II'}</Text>
+            <View style={st.chips}>
+              {p.grades.length ? p.grades.map((g, i) => <Chip key={i} g={g} />) : <Text style={st.muted}>–</Text>}
+            </View>
+            <Text style={[st.small, { color: avgColor(p.average).fg }]}>{fmtAvg(p.average)}</Text>
+          </View>
+        );
+      })}
+      {open ? (
+        <View style={st.details}>
+          {(['1', '2'] as const).map((k) =>
+            s.parts[k].grades.length ? (
+              <View key={k}>
+                <Text style={st.detailsHead}>
+                  {PART_NAMES[k]}
+                  {s.parts[k].finalValue || s.parts[k].finalLabel
+                    ? ` · zaključna: ${s.parts[k].finalValue ?? s.parts[k].finalLabel}`
+                    : ''}
+                </Text>
+                {[...s.parts[k].grades].reverse().map((g, i) => (
+                  <View key={i} style={st.detailRow}>
+                    <Chip g={g} small />
+                    <View style={{ flex: 1 }}>
+                      <Text style={st.detailMain}>
+                        {g.category || 'ocena'} <Text style={st.muted}>· {formatDate(g.date)}</Text>
+                      </Text>
+                      {g.value ? <Text style={st.small}>{g.label}</Text> : null}
+                      {g.note ? <Text style={st.note}>{g.note}</Text> : null}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null,
+          )}
+          {!s.allGrades.length ? <Text style={st.muted}>Još nema ocena iz ovog predmeta.</Text> : null}
+        </View>
+      ) : (
+        <Text style={st.hint}>Dodirnite za detalje ▾</Text>
+      )}
+    </Pressable>
+  );
+}
+
+export default function GradesScreen(p: Props) {
+  const [showOlder, setShowOlder] = useState(false);
+  const { summary } = p;
+  const maxCount = Math.max(1, ...Object.values(summary.distribution));
+  const initials = p.student.fullName
+    .split(/\s+/)
+    .map((w) => w[0] ?? '')
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
+  return (
+    <ScrollView
+      contentContainerStyle={st.wrap}
+      refreshControl={<RefreshControl refreshing={p.refreshing} onRefresh={p.onRefresh} />}
+    >
+      <View style={st.topbar}>
+        <Text style={st.brand}>📘 Pregled ocena</Text>
+        {p.demo ? <Text style={st.pill}>PROBNI PRIKAZ</Text> : null}
+        <Pressable onPress={p.onLogout} style={st.logout}>
+          <Text style={st.logoutText}>{p.demo ? 'Izlaz' : 'Odjava'}</Text>
+        </Pressable>
+      </View>
+
+      <View style={[card, st.hero]}>
+        <View style={st.avatar}>
+          <Text style={st.avatarText}>{initials}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={st.name}>{p.student.fullName}</Text>
+          <Text style={st.muted}>
+            {p.selected.schoolName} · razred <Text style={{ fontWeight: '700', color: C.text }}>{p.selected.section}</Text> ·{' '}
+            {p.selected.yearLabel}
+          </Text>
+          {!p.isCurrent ? <Text style={st.warnPill}>ranija godina</Text> : null}
+        </View>
+      </View>
+
+      {p.students.length > 1 ? (
+        <View style={st.tabs}>
+          {p.students.map((s) => (
+            <Pressable key={s.id} onPress={() => p.onSelectStudent(s.id)} style={[st.tab, s.id === p.student.id && st.tabActive]}>
+              <Text style={[st.tabText, s.id === p.student.id && st.tabTextActive]}>{s.fullName}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      {p.currentYear.length > 1 || p.otherYears.length ? (
+        <View style={st.tabs}>
+          {p.currentYear.map((c) => {
+            const active = c.studentClassId === p.selected.studentClassId;
+            return (
+              <Pressable key={c.studentClassId} onPress={() => p.onSelectClass(c)} style={[st.tab, active && st.tabActive]}>
+                <Text style={[st.tabText, active && st.tabTextActive]} numberOfLines={1}>
+                  {c.schoolName} · {c.section}
+                </Text>
+              </Pressable>
+            );
+          })}
+          {p.otherYears.length ? (
+            <Pressable onPress={() => setShowOlder(!showOlder)} style={st.tab}>
+              <Text style={st.tabText}>Ranije godine {showOlder ? '▴' : '▾'}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+      {showOlder ? (
+        <View style={card}>
+          {p.otherYears.map((c) => (
+            <Pressable
+              key={c.studentClassId}
+              onPress={() => {
+                setShowOlder(false);
+                p.onSelectClass(c);
+              }}
+              style={st.olderRow}
+            >
+              <Text style={st.olderText}>
+                {c.yearLabel} · {c.section} · {c.schoolName}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      {!p.subjects.length ? (
+        <View style={card}>
+          <Text style={st.muted}>Za ovaj razred još nema upisanih ocena.</Text>
+        </View>
+      ) : (
+        <>
+          <View style={st.statsRow}>
+            <View style={[card, st.stat]}>
+              <Text style={st.statLabel}>PROSEK</Text>
+              <View style={{ alignItems: 'flex-start', marginTop: 6 }}>
+                <Avg v={summary.overallAverage} big />
+              </View>
+              {summary.finalAverage ? (
+                <Text style={[st.small, { marginTop: 6 }]}>
+                  Zaključne: {fmtAvg(summary.finalAverage)} ({summary.finalsCount})
+                </Text>
+              ) : null}
+            </View>
+            <View style={[card, st.stat]}>
+              <Text style={st.statLabel}>OCENA: {summary.gradeCount}</Text>
+              {[5, 4, 3, 2, 1].map((n) => (
+                <View key={n} style={st.distRow}>
+                  <View style={[st.chip, st.chipSm, { backgroundColor: GRADE_COLORS[n] }]}>
+                    <Text style={[st.chipText, { fontSize: 12 }]}>{n}</Text>
+                  </View>
+                  <View style={st.bar}>
+                    <View style={[st.barFill, { width: `${(summary.distribution[n] / maxCount) * 100}%`, backgroundColor: GRADE_COLORS[n] }]} />
+                  </View>
+                  <Text style={st.small}>{summary.distribution[n]}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {summary.atRisk.length ? (
+            <View style={[card, st.warn]}>
+              <Text style={st.statLabel}>TREBA OBRATITI PAŽNJU</Text>
+              {summary.atRisk.map((n) => (
+                <Text key={n} style={st.warnItem}>
+                  ⚠️ {n}
+                </Text>
+              ))}
+              <Text style={st.small}>Prosek ispod 2,50</Text>
+            </View>
+          ) : null}
+
+          <View style={card}>
+            <Text style={st.statLabel}>POSLEDNJE OCENE</Text>
+            {summary.recent.map(({ grade, subject }, i) => (
+              <View key={i} style={st.recentRow}>
+                <Chip g={grade} small />
+                <Text style={st.recentName} numberOfLines={1}>
+                  {subject}
+                </Text>
+                <Text style={st.small}>{formatDate(grade.date)}</Text>
+              </View>
+            ))}
+          </View>
+
+          <Text style={st.section}>Ocene po predmetima</Text>
+          <Text style={[st.small, { marginBottom: 2 }]}>I = prvo, II = drugo polugodište · desno je prosek</Text>
+          {p.subjects.map((s) => (
+            <SubjectCard key={s.name} s={s} />
+          ))}
+        </>
+      )}
+      <Text style={st.footer}>Podaci se preuzimaju sa moj.esdnevnik.rs i ostaju samo na ovom telefonu.{'\n'}Povucite nadole za osvežavanje.</Text>
+    </ScrollView>
+  );
+}
+
+const st = StyleSheet.create({
+  wrap: { padding: 14, paddingBottom: 40 },
+  topbar: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  brand: { fontSize: 18, fontWeight: '700', color: C.text, flex: 1 },
+  pill: { backgroundColor: '#eef2ff', color: C.primary, fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
+  logout: { borderWidth: 1, borderColor: C.line, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' },
+  logoutText: { color: C.text, fontSize: 13 },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#5a6ff0', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#fff', fontWeight: '700', fontSize: 18 },
+  name: { fontSize: 20, fontWeight: '700', color: C.text, marginBottom: 2 },
+  muted: { color: C.muted, fontSize: 14 },
+  small: { color: C.muted, fontSize: 12 },
+  tiny: { color: C.muted, fontSize: 9, fontWeight: '700' },
+  warnPill: { alignSelf: 'flex-start', backgroundColor: '#fff4e0', color: '#9a6400', fontSize: 12, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, marginTop: 4, overflow: 'hidden' },
+  tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  tab: { borderWidth: 1, borderColor: C.line, backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, maxWidth: '100%' },
+  tabActive: { backgroundColor: C.primary, borderColor: C.primary },
+  tabText: { color: C.text, fontSize: 13 },
+  tabTextActive: { color: '#fff', fontWeight: '600' },
+  olderRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f2f7' },
+  olderText: { color: C.text },
+  statsRow: { flexDirection: 'row', gap: 12 },
+  stat: { flex: 1 },
+  statLabel: { color: C.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.4 },
+  distRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 },
+  bar: { flex: 1, height: 7, backgroundColor: C.bg, borderRadius: 4, overflow: 'hidden' },
+  barFill: { height: '100%', borderRadius: 4 },
+  warn: { borderLeftWidth: 4, borderLeftColor: '#e06a1b' },
+  warnItem: { color: C.text, fontSize: 15, marginTop: 6 },
+  recentRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  recentName: { flex: 1, color: C.text, fontSize: 14 },
+  section: { fontSize: 18, fontWeight: '700', color: C.text, marginTop: 22 },
+  subject: { paddingVertical: 12 },
+  subjHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  subjName: { flex: 1, fontSize: 16, fontWeight: '700', color: C.text },
+  subjFinal: { alignItems: 'center' },
+  partRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  partLabel: { width: 18, color: C.muted, fontWeight: '700', fontSize: 12 },
+  chips: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
+  chip: { minWidth: 28, height: 28, paddingHorizontal: 6, borderRadius: 7, alignItems: 'center', justifyContent: 'center', margin: 2 },
+  chipSm: { minWidth: 22, height: 22, margin: 0 },
+  chipText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  chipDesc: { backgroundColor: '#eef0f5' },
+  chipDescText: { color: C.text, fontSize: 12 },
+  avg: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
+  avgText: { fontWeight: '700', fontSize: 14 },
+  final: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  finalText: { color: '#fff', fontWeight: '800' },
+  hint: { color: C.muted, fontSize: 11, textAlign: 'right', marginTop: 4 },
+  details: { marginTop: 10, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 6 },
+  detailsHead: { color: C.muted, fontWeight: '700', fontSize: 13, marginTop: 10, marginBottom: 2 },
+  detailRow: { flexDirection: 'row', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#f0f2f7', alignItems: 'flex-start' },
+  detailMain: { color: C.text, fontSize: 14 },
+  note: { color: C.text, fontSize: 13, fontStyle: 'italic', marginTop: 2 },
+  footer: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 24 },
+});

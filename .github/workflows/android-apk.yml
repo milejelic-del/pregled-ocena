@@ -1,0 +1,40 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+      - run: cp android/app/build/outputs/apk/release/app-release.apk pregled-ocena.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pregled-ocena-apk
+          path: pregled-ocena.apk
+      - name: Objavi APK kao "latest" izdanje
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Pregled ocena (najnovija verzija)
+          files: pregled-ocena.apk
+          make_latest: true

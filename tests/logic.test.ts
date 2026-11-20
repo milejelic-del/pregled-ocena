@@ -1,0 +1,65 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import demo from '../src/demoData.json';
+import { overview, parseGrades } from '../src/grades';
+import { currentClass, FetchFn, LoginError, parseStudents, PortalClient } from '../src/portal';
+
+const BASE = process.env.MOCK_URL ?? 'http://127.0.0.1:5077';
+
+/** fetch sa kolačićima i ručnim praćenjem preusmerenja (kao na telefonu). */
+function cookieFetch(): FetchFn {
+  const jar = new Map<string, string>();
+  const f: FetchFn = async (url, init = {}) => {
+    let current = url;
+    let opts: RequestInit = init;
+    for (let i = 0; i < 5; i++) {
+      const headers = new Headers(opts.headers);
+      if (jar.size) headers.set('Cookie', [...jar].map(([k, v]) => `${k}=${v}`).join('; '));
+      const r = await fetch(current, { ...opts, headers, redirect: 'manual' });
+      for (const c of r.headers.getSetCookie()) {
+        const [kv] = c.split(';');
+        const idx = kv.indexOf('=');
+        jar.set(kv.slice(0, idx), kv.slice(idx + 1));
+      }
+      if (r.status >= 300 && r.status < 400 && r.headers.get('location')) {
+        current = new URL(r.headers.get('location')!, current).toString();
+        opts = { method: 'GET' };
+        continue;
+      }
+      Object.defineProperty(r, 'url', { value: current });
+      return r;
+    }
+    throw new Error('too many redirects');
+  };
+  return f;
+}
+
+test('parse students & current class', () => {
+  const s = parseStudents(demo.students);
+  assert.equal(s[0].classes.length, 3);
+  assert.equal(currentClass(s[0])!.yearLabel, '25/26');
+});
+
+test('parse grades & overview', () => {
+  const subj = parseGrades(demo.grades);
+  const mat = subj.find((x) => x.name === 'Математика')!;
+  assert.deepEqual(mat.parts['1'].grades.map((g) => g.value).sort(), [2, 3, 3, 4]);
+  assert.equal(mat.parts['1'].finalValue, 3);
+  const vers = subj.find((x) => !x.numeric)!;
+  assert.equal(vers.final!.finalLabel, 'истиче се');
+  assert.ok(overview(subj).atRisk.includes('Физика'));
+});
+
+test('login + fetch against mock portal', async () => {
+  const c = new PortalClient(BASE, cookieFetch());
+  await c.login('roditelj.test', 'TajnaLozinka1!');
+  const st = await c.getStudents();
+  const g = parseGrades(await c.getGrades(currentClass(st[0])!.studentClassId));
+  assert.ok(g.length > 5);
+  await c.logout();
+});
+
+test('bad password', async () => {
+  const c = new PortalClient(BASE, cookieFetch());
+  await assert.rejects(c.login('roditelj.test', 'pogresna'), (e: unknown) => e instanceof LoginError && /нису тачни/.test((e as Error).message));
+});
