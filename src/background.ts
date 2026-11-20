@@ -37,7 +37,7 @@ function readSnapshot(): Snapshot {
 }
 function writeSnapshot(s: Snapshot) {
   try {
-    snapFile().write(JSON.stringify(s));
+    snapFile().writeSync(JSON.stringify(s));
   } catch {
     /* nije kritično */
   }
