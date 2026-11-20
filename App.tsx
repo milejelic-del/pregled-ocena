@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Share, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, Share, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import demoData from './src/demoData.json';
 import { overview, parseGrades, Subject } from './src/grades';
@@ -8,7 +8,7 @@ import GradesScreen from './src/GradesScreen';
 import LoginScreen from './src/LoginScreen';
 import { currentClass, LoginError, parseStudents, PortalClient, PortalError, Student, StudentClass } from './src/portal';
 import * as storage from './src/storage';
-import { C } from './src/theme';
+import { DARK, LIGHT, ThemeChoice, ThemeContext } from './src/theme';
 
 type Mode = 'starting' | 'login' | 'grades';
 
@@ -27,6 +27,16 @@ export default function App() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [diag, setDiag] = useState<string | null>(null);
+  const systemScheme = useColorScheme();
+  const [themeChoice, setThemeChoice] = useState<ThemeChoice>('system');
+  const C = (themeChoice === 'system' ? systemScheme === 'dark' : themeChoice === 'dark') ? DARK : LIGHT;
+  useEffect(() => {
+    storage.loadTheme().then((t) => t && setThemeChoice(t));
+  }, []);
+  const changeTheme = (t: ThemeChoice) => {
+    setThemeChoice(t);
+    storage.saveTheme(t);
+  };
 
   const fail = useCallback((e: unknown) => {
     const msg = e instanceof PortalError ? e.message : 'Došlo je do neočekivane greške. Pokušajte ponovo.';
@@ -165,9 +175,10 @@ export default function App() {
   const summary = useMemo(() => overview(subjects), [subjects]);
 
   return (
+    <ThemeContext.Provider value={C}>
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-        <StatusBar style="dark" />
+        <StatusBar style={C.dark ? 'light' : 'dark'} />
         {mode === 'starting' ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator size="large" color={C.primary} />
@@ -194,6 +205,8 @@ export default function App() {
                 .finally(() => setRefreshing(false));
             }}
             onLogout={logout}
+            themeChoice={themeChoice}
+            onThemeChange={changeTheme}
           />
         ) : (
           <LoginScreen
@@ -206,6 +219,8 @@ export default function App() {
             onForget={forget}
             onDemo={startDemo}
             onDiagnose={diagnose}
+            themeChoice={themeChoice}
+            onThemeChange={changeTheme}
           />
         )}
         <Modal visible={diag !== null} animationType="slide" onRequestClose={() => setDiag(null)}>
@@ -214,7 +229,7 @@ export default function App() {
             <Text style={{ color: C.muted, marginVertical: 8 }}>
               Ovde je samo struktura stranica portala (nazivi polja i statusi), bez imena, ocena i lozinke. Pošaljite ovaj tekst da bismo prilagodili aplikaciju.
             </Text>
-            <ScrollView style={{ flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 10 }}>
+            <ScrollView style={{ flex: 1, backgroundColor: C.card, borderRadius: 10, padding: 10 }}>
               <Text selectable style={{ fontFamily: 'monospace', fontSize: 11, color: C.text }}>{diag}</Text>
             </ScrollView>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
@@ -222,10 +237,10 @@ export default function App() {
                 style={{ flex: 1, backgroundColor: C.primary, borderRadius: 10, padding: 12, alignItems: 'center' }}
                 onPress={() => diag && Share.share({ message: diag })}
               >
-                <Text style={{ color: '#fff', fontWeight: '700' }}>Podeli / kopiraj</Text>
+                <Text style={{ color: C.onPrimary, fontWeight: '700' }}>Podeli / kopiraj</Text>
               </Pressable>
               <Pressable
-                style={{ flex: 1, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 12, alignItems: 'center', backgroundColor: '#fff' }}
+                style={{ flex: 1, borderWidth: 1, borderColor: C.line, borderRadius: 10, padding: 12, alignItems: 'center', backgroundColor: C.card }}
                 onPress={() => setDiag(null)}
               >
                 <Text style={{ color: C.text, fontWeight: '600' }}>Zatvori</Text>
@@ -235,5 +250,6 @@ export default function App() {
         </Modal>
       </SafeAreaView>
     </SafeAreaProvider>
+    </ThemeContext.Provider>
   );
 }

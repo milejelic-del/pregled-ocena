@@ -44,3 +44,21 @@ export async function deleteCredentials(): Promise<void> {
     /* nema šta da se obriše */
   }
 }
+
+// Izbor izgleda (nije tajna, ali je zgodno čuvati ga na istom mestu)
+const THEME_KEY = 'ednevnik_theme';
+export async function loadTheme(): Promise<'system' | 'light' | 'dark' | null> {
+  try {
+    const v = await SecureStore.getItemAsync(THEME_KEY);
+    return v === 'light' || v === 'dark' || v === 'system' ? v : null;
+  } catch {
+    return null;
+  }
+}
+export async function saveTheme(v: 'system' | 'light' | 'dark'): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(THEME_KEY, v);
+  } catch {
+    /* web/probni prikaz */
+  }
+}

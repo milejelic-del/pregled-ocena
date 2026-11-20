@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,7 +11,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { C, card } from './theme';
+import { cardStyle, Palette, ThemeChoice, useTheme } from './theme';
+import ThemePicker from './ThemePicker';
 
 interface Props {
   busy: boolean;
@@ -23,12 +24,17 @@ interface Props {
   onForget: () => void;
   onDemo: () => void;
   onDiagnose: (username: string, password: string) => void;
+  themeChoice: ThemeChoice;
+  onThemeChange: (t: ThemeChoice) => void;
 }
 
 export default function LoginScreen(p: Props) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
+  const C = useTheme();
+  const s = useMemo(() => makeStyles(C), [C]);
+  const card = s.card;
 
   const submit = () => {
     p.onLogin(username, password, remember && p.canRemember);
@@ -66,6 +72,7 @@ export default function LoginScreen(p: Props) {
           <Text style={s.label}>Korisničko ime</Text>
           <TextInput
             style={s.input}
+            placeholderTextColor={C.muted}
             value={username}
             onChangeText={setUsername}
             autoCapitalize="none"
@@ -78,6 +85,7 @@ export default function LoginScreen(p: Props) {
           <Text style={s.label}>Lozinka</Text>
           <TextInput
             style={s.input}
+            placeholderTextColor={C.muted}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -97,7 +105,7 @@ export default function LoginScreen(p: Props) {
           ) : null}
 
           <Pressable style={[s.btn, s.btnPrimary, { marginTop: 16 }]} onPress={submit} disabled={p.busy}>
-            {p.busy ? <ActivityIndicator color="#fff" /> : <Text style={s.btnPrimaryText}>Prijavi se i učitaj ocene</Text>}
+            {p.busy ? <ActivityIndicator color={C.onPrimary} /> : <Text style={s.btnPrimaryText}>Prijavi se i učitaj ocene</Text>}
           </Pressable>
           <Text style={[s.small, { marginTop: 14 }]}>
             Lozinka se šalje samo portalu moj.esdnevnik.rs i ne upisuje se nigde drugde.
@@ -117,12 +125,15 @@ export default function LoginScreen(p: Props) {
         <Pressable onPress={p.onDemo} style={{ marginTop: 18 }}>
           <Text style={s.link}>Pogledaj probni prikaz sa izmišljenim podacima →</Text>
         </Pressable>
+        <ThemePicker value={p.themeChoice} onChange={p.onThemeChange} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-const s = StyleSheet.create({
+const makeStyles = (C: Palette) =>
+  StyleSheet.create({
+  card: cardStyle(C),
   wrap: { padding: 18, paddingTop: 40 },
   logo: { fontSize: 44, textAlign: 'center' },
   title: { fontSize: 26, fontWeight: '700', textAlign: 'center', color: C.text, marginTop: 6 },
@@ -131,13 +142,13 @@ const s = StyleSheet.create({
   muted: { color: C.muted, fontSize: 14 },
   small: { color: C.muted, fontSize: 12 },
   label: { fontWeight: '600', color: C.text, marginTop: 14, marginBottom: 6 },
-  input: { borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 16, color: C.text },
+  input: { borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 16, color: C.text, backgroundColor: C.subtle },
   alert: { backgroundColor: C.dangerBg, color: C.danger, padding: 10, borderRadius: 10, marginTop: 12 },
-  saved: { backgroundColor: '#f6f8fd', borderRadius: 10, padding: 12, marginTop: 12 },
+  saved: { backgroundColor: C.subtle, borderRadius: 10, padding: 12, marginTop: 12 },
   row: { flexDirection: 'row', gap: 10, marginTop: 8 },
-  btn: { borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingVertical: 12, alignItems: 'center', backgroundColor: '#fff' },
+  btn: { borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingVertical: 12, alignItems: 'center', backgroundColor: C.card },
   btnText: { color: C.text, fontWeight: '600' },
   btnPrimary: { backgroundColor: C.primary, borderColor: C.primary },
-  btnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  btnPrimaryText: { color: C.onPrimary, fontWeight: '700', fontSize: 16 },
   link: { color: C.primary, textAlign: 'center' },
 });

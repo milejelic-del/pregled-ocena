@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { formatDate, GradeEntry, Overview, PART_NAMES, PartSummary, Subject } from './grades';
 import { Student, StudentClass } from './portal';
-import { avgColor, C, card, fmtAvg, GRADE_COLORS } from './theme';
+import { avgColor, cardStyle, fmtAvg, GRADE_COLORS, Palette, ThemeChoice, useTheme } from './theme';
+import ThemePicker from './ThemePicker';
 
 interface Props {
   students: Student[];
@@ -19,9 +20,14 @@ interface Props {
   onSelectStudent: (id: number) => void;
   onSelectClass: (c: StudentClass) => void;
   onLogout: () => void;
+  themeChoice: ThemeChoice;
+  onThemeChange: (t: ThemeChoice) => void;
 }
 
 function Chip({ g, small }: { g: GradeEntry; small?: boolean }) {
+  const C = useTheme();
+  const st = useMemo(() => makeStyles(C), [C]);
+  const card = st.card;
   if (!g.value)
     return (
       <View style={[st.chip, st.chipDesc]}>
@@ -36,7 +42,10 @@ function Chip({ g, small }: { g: GradeEntry; small?: boolean }) {
 }
 
 function Avg({ v, big }: { v: number | null; big?: boolean }) {
-  const c = avgColor(v);
+  const C = useTheme();
+  const st = useMemo(() => makeStyles(C), [C]);
+  const card = st.card;
+  const c = avgColor(v, C);
   return (
     <View style={[st.avg, { backgroundColor: c.bg }, big && { paddingHorizontal: 12, paddingVertical: 4 }]}>
       <Text style={[st.avgText, { color: c.fg }, big && { fontSize: 28 }]}>{fmtAvg(v)}</Text>
@@ -45,6 +54,9 @@ function Avg({ v, big }: { v: number | null; big?: boolean }) {
 }
 
 function Final({ p }: { p: PartSummary | null }) {
+  const C = useTheme();
+  const st = useMemo(() => makeStyles(C), [C]);
+  const card = st.card;
   if (p?.finalValue)
     return (
       <View style={[st.final, { backgroundColor: GRADE_COLORS[p.finalValue] }]}>
@@ -61,6 +73,9 @@ function Final({ p }: { p: PartSummary | null }) {
 }
 
 function SubjectCard({ s }: { s: Subject }) {
+  const C = useTheme();
+  const st = useMemo(() => makeStyles(C), [C]);
+  const card = st.card;
   const [open, setOpen] = useState(false);
   return (
     <Pressable style={[card, st.subject]} onPress={() => setOpen(!open)} accessibilityRole="button">
@@ -82,7 +97,7 @@ function SubjectCard({ s }: { s: Subject }) {
             <View style={st.chips}>
               {p.grades.length ? p.grades.map((g, i) => <Chip key={i} g={g} />) : <Text style={st.muted}>–</Text>}
             </View>
-            <Text style={[st.small, { color: avgColor(p.average).fg }]}>{fmtAvg(p.average)}</Text>
+            <Text style={[st.small, { color: avgColor(p.average, C).fg }]}>{fmtAvg(p.average)}</Text>
           </View>
         );
       })}
@@ -122,6 +137,9 @@ function SubjectCard({ s }: { s: Subject }) {
 }
 
 export default function GradesScreen(p: Props) {
+  const C = useTheme();
+  const st = useMemo(() => makeStyles(C), [C]);
+  const card = st.card;
   const [showOlder, setShowOlder] = useState(false);
   const { summary } = p;
   const maxCount = Math.max(1, ...Object.values(summary.distribution));
@@ -273,32 +291,35 @@ export default function GradesScreen(p: Props) {
           ))}
         </>
       )}
+      <ThemePicker value={p.themeChoice} onChange={p.onThemeChange} />
       <Text style={st.footer}>Podaci se preuzimaju sa moj.esdnevnik.rs i ostaju samo na ovom telefonu.{'\n'}Povucite nadole za osvežavanje.</Text>
     </ScrollView>
   );
 }
 
-const st = StyleSheet.create({
+const makeStyles = (C: Palette) =>
+  StyleSheet.create({
+  card: cardStyle(C),
   wrap: { padding: 14, paddingBottom: 40 },
   topbar: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   brand: { fontSize: 18, fontWeight: '700', color: C.text, flex: 1 },
-  pill: { backgroundColor: '#eef2ff', color: C.primary, fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
-  logout: { borderWidth: 1, borderColor: C.line, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#fff' },
+  pill: { backgroundColor: C.pillBg, color: C.pillText, fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
+  logout: { borderWidth: 1, borderColor: C.line, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: C.card },
   logoutText: { color: C.text, fontSize: 13 },
   hero: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#5a6ff0', alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: C.avatar, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontWeight: '700', fontSize: 18 },
   name: { fontSize: 20, fontWeight: '700', color: C.text, marginBottom: 2 },
   muted: { color: C.muted, fontSize: 14 },
   small: { color: C.muted, fontSize: 12 },
   tiny: { color: C.muted, fontSize: 9, fontWeight: '700' },
-  warnPill: { alignSelf: 'flex-start', backgroundColor: '#fff4e0', color: '#9a6400', fontSize: 12, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, marginTop: 4, overflow: 'hidden' },
+  warnPill: { alignSelf: 'flex-start', backgroundColor: C.warnBg, color: C.warnText, fontSize: 12, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, marginTop: 4, overflow: 'hidden' },
   tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  tab: { borderWidth: 1, borderColor: C.line, backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, maxWidth: '100%' },
+  tab: { borderWidth: 1, borderColor: C.line, backgroundColor: C.card, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, maxWidth: '100%' },
   tabActive: { backgroundColor: C.primary, borderColor: C.primary },
   tabText: { color: C.text, fontSize: 13 },
-  tabTextActive: { color: '#fff', fontWeight: '600' },
-  olderRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f2f7' },
+  tabTextActive: { color: C.onPrimary, fontWeight: '600' },
+  olderRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.divider },
   olderText: { color: C.text },
   statsRow: { flexDirection: 'row', gap: 12 },
   stat: { flex: 1 },
@@ -321,7 +342,7 @@ const st = StyleSheet.create({
   chip: { minWidth: 28, height: 28, paddingHorizontal: 6, borderRadius: 7, alignItems: 'center', justifyContent: 'center', margin: 2 },
   chipSm: { minWidth: 22, height: 22, margin: 0 },
   chipText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  chipDesc: { backgroundColor: '#eef0f5' },
+  chipDesc: { backgroundColor: C.chipDescBg },
   chipDescText: { color: C.text, fontSize: 12 },
   avg: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
   avgText: { fontWeight: '700', fontSize: 14 },
@@ -330,7 +351,7 @@ const st = StyleSheet.create({
   hint: { color: C.muted, fontSize: 11, textAlign: 'right', marginTop: 4 },
   details: { marginTop: 10, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 6 },
   detailsHead: { color: C.muted, fontWeight: '700', fontSize: 13, marginTop: 10, marginBottom: 2 },
-  detailRow: { flexDirection: 'row', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#f0f2f7', alignItems: 'flex-start' },
+  detailRow: { flexDirection: 'row', gap: 10, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: C.divider, alignItems: 'flex-start' },
   detailMain: { color: C.text, fontSize: 14 },
   note: { color: C.text, fontSize: 13, fontStyle: 'italic', marginTop: 2 },
   footer: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 24 },
