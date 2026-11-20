@@ -3,12 +3,31 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Share, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import demoData from './src/demoData.json';
-import { overview, parseGrades, Subject } from './src/grades';
+import { overview, parseGrades, shareText, Subject } from './src/grades';
 import GradesScreen from './src/GradesScreen';
 import LoginScreen from './src/LoginScreen';
 import { currentClass, LoginError, parseStudents, PortalClient, PortalError, Student, StudentClass } from './src/portal';
 import * as storage from './src/storage';
 import * as bg from './src/background';
+import { biometricAvailable, unlock } from './src/biometric';
+import type { PageBlock } from './src/html';
+import type { SectionKey, SectionState } from './src/SectionView';
+
+const DEMO_SECTIONS: Record<'absents' | 'behavior', PageBlock[]> = {
+  absents: [
+    {
+      title: 'прво полугодиште',
+      summary: ['Оправдано: 3', 'Неоправдано: 1'],
+      lines: [
+        'Математика · 12. 11. 2025. · 2. час · оправдан',
+        'Физика · 12. 11. 2025. · 3. час · оправдан',
+        'Енглески језик · 12. 11. 2025. · 4. час · оправдан',
+        'Историја · 03. 12. 2025. · 5. час · неоправдан',
+      ],
+    },
+  ],
+  behavior: [{ title: 'Владање', summary: [], lines: ['Прво полугодиште · примерно (5)', 'Друго полугодиште · -'] }],
+};
 import { DARK, LIGHT, ThemeChoice, ThemeContext } from './src/theme';
 
 type Mode = 'starting' | 'login' | 'grades';
@@ -34,6 +53,11 @@ export default function App() {
   useEffect(() => {
     storage.loadTheme().then((t) => t && setThemeChoice(t));
   }, []);
+  const [section, setSection] = useState<SectionKey>('grades');
+  const [sectionState, setSectionState] = useState<SectionState>({ loading: false, blocks: null, error: null });
+  const sectionCache = useRef(new Map<string, PageBlock[]>());
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioOn, setBioOn] = useState(false);
   const [notifyOn, setNotifyOn] = useState(false);
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -89,6 +113,7 @@ export default function App() {
       const parsed = parseGrades(raw);
       setSelected(cls);
       setSubjects(parsed);
+      setError(null);
       if (!isDemo && owner) bg.rememberSeen(owner, cls, parsed);
     },
     [demo],
@@ -128,15 +153,20 @@ export default function App() {
     [fail, loadAll],
   );
 
-  // Pri pokretanju: ako postoje sačuvani podaci, prijavi se automatski.
+  // Pri pokretanju: ako postoje sačuvani podaci, prijavi se automatski (uz otisak prsta ako je uključen).
   useEffect(() => {
     (async () => {
       const available = await storage.isAvailable();
       setCanRemember(available);
+      const bioHw = await biometricAvailable();
+      const bio = bioHw && (await storage.loadBio());
+      setBioAvailable(bioHw);
+      setBioOn(bio);
       const saved = available ? await storage.loadCredentials() : null;
       if (saved) {
         setSavedUsername(saved.username);
         setMode('login');
+        if (bio && !(await unlock())) return; // ostaje na ekranu za prijavu sa dugmetom za sačuvani nalog
         await login(saved.username, saved.password, false);
       } else {
         setMode('login');
@@ -145,6 +175,7 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loginSaved = async () => {
+    if (bioOn && !(await unlock())) return;
     const saved = await storage.loadCredentials();
     if (saved) await login(saved.username, saved.password, false);
   };
@@ -163,6 +194,8 @@ export default function App() {
     setStudents([]);
     setSubjects([]);
     setSelected(null);
+    setSection('grades');
+    sectionCache.current.clear();
     setMode('login');
   };
 
@@ -196,6 +229,7 @@ export default function App() {
           if (saved) await client.current.login(saved.username, saved.password);
         }
         await loadGrades(selected, demo, students.find((s) => s.id === studentId));
+        if (section !== 'grades') await loadSection(section, selected, true);
       }
     } catch (e) {
       fail(e);
@@ -205,6 +239,53 @@ export default function App() {
   };
 
   const student = students.find((s) => s.id === studentId) ?? null;
+
+  // Izostanci / vladanje: učitavaju se kad se otvori kartica, pa se pamte po razredu
+  const loadSection = useCallback(
+    async (kind: SectionKey, cls: StudentClass | null, force = false) => {
+      if (kind === 'grades' || !cls) return;
+      const key = `${kind}|${cls.portalKey ?? cls.studentClassId}`;
+      const cached = sectionCache.current.get(key);
+      if (cached && !force) {
+        setSectionState({ loading: false, blocks: cached, error: null });
+        return;
+      }
+      setSectionState({ loading: true, blocks: null, error: null });
+      try {
+        if (!demo && !client.current.loggedIn) {
+          const saved = await storage.loadCredentials();
+          if (saved) await client.current.login(saved.username, saved.password);
+        }
+        const blocks = demo ? DEMO_SECTIONS[kind] : await client.current.getSection(kind === 'absents' ? '/absents' : '/behavior', cls);
+        sectionCache.current.set(key, blocks);
+        setSectionState({ loading: false, blocks, error: null });
+      } catch (e) {
+        setSectionState({ loading: false, blocks: null, error: e instanceof PortalError ? e.message : 'Učitavanje nije uspelo. Povucite nadole za ponovni pokušaj.' });
+      }
+    },
+    [demo],
+  );
+  useEffect(() => {
+    loadSection(section, selected);
+  }, [section, selected, loadSection]);
+
+  const share = () => {
+    if (!student || !selected) return;
+    Share.share({ message: shareText(student.fullName, `${selected.section} · ${selected.yearLabel}`, subjects, overview(subjects)) }).catch(() => undefined);
+  };
+
+  const toggleBio = async (on: boolean) => {
+    if (on && !(await unlock('Potvrdite otisak prsta'))) return;
+    await storage.saveBio(on);
+    setBioOn(on);
+  };
+
+  const selectClass = (c: StudentClass) => {
+    setRefreshing(true);
+    loadGrades(c, demo, student)
+      .catch(fail)
+      .finally(() => setRefreshing(false));
+  };
   const view = useMemo(() => {
     if (!student || !selected) return null;
     const cur = currentClass(student)!;
@@ -241,15 +322,17 @@ export default function App() {
             refreshing={refreshing}
             onRefresh={refresh}
             onSelectStudent={(id) => loadAll(demo, id).catch(fail)}
-            onSelectClass={(c) => {
-              setRefreshing(true);
-              loadGrades(c, demo, student)
-                .catch(fail)
-                .finally(() => setRefreshing(false));
-            }}
+            onSelectClass={selectClass}
             onLogout={logout}
             themeChoice={themeChoice}
             onThemeChange={changeTheme}
+            error={error}
+            section={section}
+            onSection={setSection}
+            sectionState={sectionState}
+            onShare={share}
+            onBackToCurrent={() => selectClass(currentClass(student)!)}
+            security={{ available: bioAvailable, on: bioOn, onToggle: toggleBio }}
             notify={{ on: notifyOn, message: notifyMsg, checking, lastCheck: bg.lastCheck(), onToggle: toggleNotify, onCheckNow: checkNow }}
           />
         ) : (

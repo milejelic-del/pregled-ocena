@@ -174,6 +174,22 @@ function firstText(html: string, cls: string): string {
   return m ? textOf(m[1]) : '';
 }
 
+/** Brojčana ocena iz simbola („5“, „5 одличан“, „одличан (5)“) ili iz naziva („одличан (5)“). */
+export function gradeValue(symbol: string, label: string): number | null {
+  const s = symbol.trim();
+  if (/^[1-5]$/.test(s)) return Number(s);
+  const inSym = s.match(/^([1-5])(?![\d.,])/) ?? s.match(/\(([1-5])\)/);
+  if (inSym) return Number(inSym[1]);
+  const inLabel = label.match(/\(([1-5])\)\s*$/);
+  if (inLabel && !/[a-zA-Zа-яА-Я]{3,}/.test(s.replace(/\(.*\)/, ''))) return Number(inLabel[1]);
+  if (!s) {
+    const words: Record<string, number> = { одличан: 5, врлодобар: 4, 'врло добар': 4, добар: 3, довољан: 2, недовољан: 1, odličan: 5, 'vrlo dobar': 4, dobar: 3, dovoljan: 2, nedovoljan: 1 };
+    const l = label.toLowerCase().replace(/\s*\(.*$/, '').trim();
+    if (l in words) return words[l];
+  }
+  return null;
+}
+
 const num = (s: string) => {
   const m = s.match(/(\d+[.,]\d+|\d+)/);
   return m ? Number(m[1].replace(',', '.')) : null;
@@ -224,7 +240,7 @@ export function parseSubjectPage(html: string, fallbackName: string, sequence: n
       const date = toIsoDate(textOf(subtitleHtml));
       const category = textOf(subtitleHtml.match(/<div class="name-subtitle-suffix"[^>]*>([\s\S]*?)(?:<\/div>|$)/)?.[1] ?? '').replace(/^[•·\s\u00a0]+/, '').trim();
       const note = firstText(item, 'category-item-bottom-note');
-      const v = /^\d$/.test(symbol) ? Number(symbol) : null;
+      const v = gradeValue(symbol, label);
       if (v) numeric = true;
       return {
         descriptive: v === null,
@@ -253,4 +269,80 @@ export function maskedSkeleton(html: string, from: string, maxLen = 2500): strin
     .replace(/>([^<]+)</g, (_, t: string) => '>' + t.replace(/\d/g, 'N').replace(/[^\sN.,:;()\-–—•/]+/g, 'X').replace(/\s+/g, ' ') + '<')
     .replace(/\s+/g, ' ')
     .slice(0, maxLen);
+}
+
+// ---------------- Ostale stranice (izostanci, vladanje...) ----------------
+
+export interface PageBlock {
+  title: string;
+  summary: string[];
+  lines: string[];
+}
+
+/** Tekstualni delovi HTML-a, po jedan za svaki komad teksta između tagova. */
+function segments(html: string): string[] {
+  return html
+    .replace(/<(script|style|svg)[\s\S]*?<\/\1>/g, ' ')
+    .split(/<[^>]+>/)
+    .map((t) => decodeEntities(t).replace(/\s+/g, ' ').replace(/^[•·\s\u00a0]+/, '').trim())
+    .filter((t) => t && t !== '-');
+}
+
+function mainPart(html: string): string {
+  let start = html.indexOf('sections-wrap');
+  if (start < 0) start = html.indexOf('main-content');
+  if (start < 0) start = Math.max(0, html.indexOf('<body'));
+  return html
+    .slice(start)
+    .replace(/<(script|style|svg)[\s\S]*?<\/\1>/g, ' ')
+    .replace(/<(nav|footer)\b[\s\S]*?<\/\1>/g, ' ')
+    .replace(/<div class="modal[\s"][\s\S]*$/, ' ')
+    .replace(/<div class="dropdown-menu[\s\S]*?<\/div>/g, ' ');
+}
+
+/**
+ * Opšti čitač stranica portala: kartice (category-wrap / tabele / es-card) u blokove teksta.
+ * Ne zna unapred šta piše na stranici, ali čuva redosled i grupisanje kakvo je na portalu.
+ */
+export function parsePageBlocks(html: string): PageBlock[] {
+  const body = mainPart(html);
+  const out: PageBlock[] = [];
+  const cats = blocks(body, 'category-wrap');
+  if (cats.length) {
+    for (const cat of cats) {
+      const titleHtml = cat.match(/<div class="category-title"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? '';
+      const title = segments(titleHtml).join(' · ');
+      const summaryHtml = cat.match(/<div class="final-grade-field"[^>]*>([\s\S]*?)<div class="category-items-wrap/)?.[1] ?? '';
+      const items = blocks(cat, 'category-item-wrap');
+      out.push({
+        title,
+        summary: segments(summaryHtml),
+        lines: items.length ? items.map((it) => segments(it).join(' · ')) : segments(cat.slice(titleHtml.length)).slice(1),
+      });
+    }
+    return out.filter((b) => b.title || b.lines.length);
+  }
+  if (/<table/.test(body)) {
+    const re = /<table[\s\S]*?<\/table>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(body))) {
+      const before = body.slice(Math.max(0, m.index - 1500), m.index);
+      const heads = [...before.matchAll(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/g)];
+      const title = heads.length ? textOf(heads[heads.length - 1][1]) : '';
+      const rows = [...m[0].matchAll(/<tr[\s\S]*?<\/tr>/g)].map((r) =>
+        [...r[0].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => textOf(c[1])).filter(Boolean).join(' · '),
+      );
+      out.push({ title, summary: [], lines: rows.filter(Boolean) });
+    }
+    if (out.length) return out;
+  }
+  const cards = body.split(/<article\b|<div class="es-card[\s"]/).slice(1);
+  for (const c of cards.length ? cards : [body]) {
+    const h = c.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/);
+    const title = h ? textOf(h[1]) : '';
+    const rest = h ? c.slice((h.index ?? 0) + h[0].length) : c;
+    const lines = segments(rest).slice(0, 300);
+    if (title || lines.length) out.push({ title, summary: [], lines });
+  }
+  return out;
 }

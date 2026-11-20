@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pregled ocena",
     "slug": "ednevnik-pregled-ocena",
-    "version": "1.2.1",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "ios": {
@@ -25,7 +25,7 @@
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "allowBackup": false,
-      "versionCode": 7
+      "versionCode": 8
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -46,6 +46,12 @@
           "android": {
             "extraProguardRules": "# WorkManager (provera ocena u pozadini) koristi Room; R8 ne sme da ukloni konstruktore baze\n-keep class * extends androidx.room.RoomDatabase { <init>(...); }\n-keep class androidx.work.impl.** { *; }\n-keep class androidx.room.** { *; }\n-keep class androidx.startup.** { *; }\n"
           }
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Aplikacija koristi Face ID da zaštiti pregled ocena."
         }
       ]
     ],

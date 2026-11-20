@@ -254,3 +254,21 @@ export function calculate(s: Subject): Calculation | null {
     ifFive: r((sum + 5) / (n + 1)),
   };
 }
+
+// ---------------- Tekst za deljenje ----------------
+
+export function shareText(student: string, className: string, subjects: Subject[], o: Overview): string {
+  const f = (v: number | null) => (v === null ? '–' : v.toFixed(2).replace('.', ','));
+  const lines = [`📚 ${student} · ${className}`, `Prosek: ${f(o.overallAverage)} · ocena: ${o.gradeCount}`];
+  if (o.finalsCount) lines.push(`Zaključne (prosek): ${f(o.finalAverage)}`);
+  lines.push('');
+  for (const s of subjects) {
+    const vals = s.allGrades.map((g) => (g.value ? String(g.value) : g.label)).filter(Boolean);
+    if (!vals.length && !s.final) continue;
+    const fin = s.final ? ` · zaklj. ${s.final.finalValue ?? s.final.finalLabel}` : '';
+    lines.push(`${s.name}: ${s.numeric ? f(s.average) : ''}${s.numeric ? ' (' : ''}${vals.join(', ')}${s.numeric ? ')' : ''}${fin}`);
+  }
+  if (o.atRisk.length) lines.push('', `⚠️ Pažnja: ${o.atRisk.join(', ')}`);
+  lines.push('', 'Poslato iz aplikacije Pregled ocena');
+  return lines.join('\n');
+}

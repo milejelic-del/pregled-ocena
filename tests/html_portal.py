@@ -167,6 +167,40 @@ def grades_show(cid):
     return subject_page(cid - 1000)
 
 
+def page(inner, path):
+    return ('<html>' + menu(session["active"], path) + '<div class="main-content container"><div class="sections-wrap">'
+            + inner + '</div></div><div class="modal fade"><div>Сакривено</div></div></html>')
+
+
+@app.get("/absents")
+def absents():
+    if (g := guard()):
+        return g
+    old = session["active"] == "6001"
+    items = [("12. 11. 2025.", "Математика", "2. час", "оправдан"), ("12. 11. 2025.", "Физика", "3. час", "оправдан"),
+             ("03. 12. 2025.", "Историја", "5. час", "неоправдан")]
+    if old:
+        items = items[:1]
+    rows = "".join(
+        '<div class="category-item-wrap"><div class="category-item-top"><div class="category-item-info">'
+        f'<div class="name">{s}</div><div class="name-subtitle">{d}<div class="name-subtitle-suffix">&nbsp;&bull;&nbsp;{h}</div></div></div>'
+        f'<div class="status">{st}</div></div></div>' for d, s, h, st in items)
+    inner = ('<article class="es-card"><h4 class="es__card__title">Изостанци</h4><div class="categories-wrap">'
+             '<div class="category-wrap"><div class="category-top"><div class="category-title">прво полугодиште</div>'
+             f'<div class="final-grade-field"><small>Оправдано: {2 if not old else 1}</small><small>Неоправдано: {1 if not old else 0}</small></div></div>'
+             f'<div class="category-items-wrap">{rows}</div></div></div></article>')
+    return page(inner, "/absents")
+
+
+@app.get("/behavior")
+def behavior():
+    if (g := guard()):
+        return g
+    inner = ('<article class="es-card"><h4 class="es__card__title">Владање</h4><table class="table"><tr><th>Полугодиште</th><th>Оцена</th></tr>'
+             '<tr><td>Прво полугодиште</td><td>примерно (5)</td></tr><tr><td>Друго полугодиште</td><td>-</td></tr></table></article>')
+    return page(inner, "/behavior")
+
+
 @app.get("/logout")
 def logout():
     session.clear()

@@ -1,0 +1,109 @@
+import { ActivityIndicator, Text, View } from 'react-native';
+import type { PageBlock } from './html';
+import { cardStyle, Palette, useTheme } from './theme';
+
+export type SectionKey = 'grades' | 'absents' | 'behavior';
+export interface SectionState {
+  loading: boolean;
+  blocks: PageBlock[] | null;
+  error: string | null;
+}
+
+/** Boja za red prema rečima koje portal koristi (ćirilica i latinica). */
+function tone(text: string, C: Palette): string | null {
+  const t = text.toLowerCase();
+  if (/неоправдан|neopravdan/.test(t)) return C.dark ? '#f87171' : '#c62828';
+  if (/нерегулис|neregulis|на чекању|na čekanju|чека|čeka/.test(t)) return C.dark ? '#fbbf24' : '#b26a00';
+  if (/оправдан|opravdan|примерно|primerno/.test(t)) return C.dark ? '#4ade80' : '#1e8e3e';
+  if (/укор|ukor|опомен|opomen|мера|mera|незадовољ|nezadovolj/.test(t)) return C.dark ? '#f87171' : '#c62828';
+  return null;
+}
+
+function counts(lines: string[]) {
+  let ok = 0, bad = 0, wait = 0;
+  for (const l of lines) {
+    const t = l.toLowerCase();
+    if (/неоправдан|neopravdan/.test(t)) bad++;
+    else if (/нерегулис|neregulis|чека|čeka/.test(t)) wait++;
+    else if (/оправдан|opravdan/.test(t)) ok++;
+  }
+  return { ok, bad, wait };
+}
+
+export default function SectionView({ kind, state }: { kind: 'absents' | 'behavior'; state: SectionState }) {
+  const C = useTheme();
+  const card = cardStyle(C);
+  if (state.loading && !state.blocks) {
+    return (
+      <View style={[card, { alignItems: 'center', paddingVertical: 30 }]}>
+        <ActivityIndicator color={C.primary} />
+        <Text style={{ color: C.muted, marginTop: 8 }}>Učitavam sa portala…</Text>
+      </View>
+    );
+  }
+  if (state.error) {
+    return (
+      <View style={[card, { backgroundColor: C.dangerBg }]}>
+        <Text style={{ color: C.danger, fontWeight: '600' }}>{state.error}</Text>
+      </View>
+    );
+  }
+  const blocks = state.blocks ?? [];
+  if (!blocks.length || blocks.every((b) => !b.lines.length && !b.summary.length)) {
+    return (
+      <View style={card}>
+        <Text style={{ color: C.muted }}>
+          {kind === 'absents' ? 'Nema upisanih izostanaka za ovaj razred. 🎉' : 'Za ovaj razred još nema podataka o vladanju.'}
+        </Text>
+      </View>
+    );
+  }
+  const all = blocks.flatMap((b) => b.lines);
+  const c = kind === 'absents' ? counts(all) : null;
+  return (
+    <View>
+      {c && c.ok + c.bad + c.wait > 0 ? (
+        <View style={[card, { flexDirection: 'row', justifyContent: 'space-around' }]}>
+          {[
+            [c.ok, 'opravdano', C.dark ? '#4ade80' : '#1e8e3e'],
+            [c.bad, 'neopravdano', C.dark ? '#f87171' : '#c62828'],
+            [c.wait, 'na čekanju', C.dark ? '#fbbf24' : '#b26a00'],
+          ].map(([n, label, color]) => (
+            <View key={label as string} style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 26, fontWeight: '800', color: color as string }}>{n as number}</Text>
+              <Text style={{ color: C.muted, fontSize: 12 }}>{label as string}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {blocks.map((b, i) => (
+        <View key={i} style={card}>
+          {b.title ? (
+            <Text style={{ color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase' }}>{b.title}</Text>
+          ) : null}
+          {b.summary.length ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {b.summary.map((s, j) => (
+                <Text
+                  key={j}
+                  style={{ backgroundColor: C.pillBg, color: tone(s, C) ?? C.pillText, fontWeight: '700', fontSize: 13, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: 'hidden' }}
+                >
+                  {s}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+          {b.lines.map((l, j) => {
+            const color = tone(l, C);
+            return (
+              <View key={j} style={{ flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 8, borderTopWidth: j ? 1 : 0, borderTopColor: C.divider, marginTop: j ? 0 : 6 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, marginTop: 6, marginRight: 10, backgroundColor: color ?? C.line }} />
+                <Text style={{ flex: 1, color: C.text, fontSize: 14, lineHeight: 20 }}>{l}</Text>
+              </View>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}

@@ -79,3 +79,20 @@ export async function saveNotify(on: boolean): Promise<void> {
     /* web/probni prikaz */
   }
 }
+
+// Otvaranje otiskom prsta / licem
+const BIO_KEY = 'ednevnik_bio';
+export async function loadBio(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(BIO_KEY)) === '1';
+  } catch {
+    return false;
+  }
+}
+export async function saveBio(on: boolean): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(BIO_KEY, on ? '1' : '0');
+  } catch {
+    /* web/probni prikaz */
+  }
+}

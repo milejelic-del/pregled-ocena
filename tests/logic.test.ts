@@ -105,3 +105,37 @@ test('html portal: no /api, data embedded in pages', async () => {
   assert.ok(/prepoznato ocena: [1-9]/.test(report), report);
   assert.ok(!report.includes('Ана') && !report.includes('Математика'), 'no personal data in report');
 });
+
+test('html portal: absences and behavior pages', async () => {
+  const c = new PortalClient(HTML_BASE, cookieFetch());
+  await c.login('roditelj.test', 'TajnaLozinka1!');
+  const st = await c.getStudents();
+  const cur = currentClass(st[0])!;
+  const old = st[0].classes.find((k) => k.yearLabel === '24/25')!;
+  const abs = await c.getSection('/absents', cur);
+  assert.equal(abs.length, 1);
+  assert.equal(abs[0].title, 'прво полугодиште');
+  assert.deepEqual(abs[0].summary, ['Оправдано: 2', 'Неоправдано: 1']);
+  assert.equal(abs[0].lines.length, 3);
+  assert.equal(abs[0].lines[2], 'Историја · 03. 12. 2025. · 5. час · неоправдан');
+  assert.ok(!JSON.stringify(abs).includes('Сакривено'));
+  const absOld = await c.getSection('/absents', old);
+  assert.equal(absOld[0].lines.length, 1);
+  const beh = await c.getSection('/behavior', cur);
+  assert.equal(beh[0].title, 'Владање');
+  assert.deepEqual(beh[0].lines, ['Полугодиште · Оцена', 'Прво полугодиште · примерно (5)', 'Друго полугодиште · -']);
+  // nazad na tekući razred
+  const back = await c.getSection('/absents', cur);
+  assert.equal(back[0].lines.length, 3);
+});
+
+test('back to the class that was active at login, from a fresh client', async () => {
+  const c = new PortalClient(HTML_BASE, cookieFetch());
+  await c.login('roditelj.test', 'TajnaLozinka1!');
+  const st = await c.getStudents();
+  const cur = currentClass(st[0])!;
+  const old = st[0].classes.find((k) => k.yearLabel === '24/25')!;
+  await c.getGrades(old);
+  const mat = parseGrades(await c.getGrades(cur)).find((s) => s.name === 'Математика')!;
+  assert.ok(mat.allGrades[0].date.startsWith('2025'));
+});

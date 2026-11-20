@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { calculate, formatDate, GradeEntry, isRecent, Overview, PART_NAMES, PartSummary, Subject } from './grades';
 import TrendChart from './TrendChart';
 import { Student, StudentClass } from './portal';
 import { avgColor, cardStyle, fmtAvg, GRADE_COLORS, Palette, ThemeChoice, useTheme } from './theme';
 import ThemePicker from './ThemePicker';
 import NotifyCard, { NotifyProps } from './NotifyCard';
+import SectionView, { SectionKey, SectionState } from './SectionView';
 
 interface Props {
   students: Student[];
@@ -25,6 +26,13 @@ interface Props {
   themeChoice: ThemeChoice;
   onThemeChange: (t: ThemeChoice) => void;
   notify: NotifyProps;
+  error: string | null;
+  section: SectionKey;
+  onSection: (s: SectionKey) => void;
+  sectionState: SectionState;
+  onShare: () => void;
+  onBackToCurrent: () => void;
+  security: { available: boolean; on: boolean; onToggle: (on: boolean) => void };
 }
 
 function Chip({ g, small }: { g: GradeEntry; small?: boolean }) {
@@ -227,6 +235,11 @@ export default function GradesScreen(p: Props) {
       <View style={st.topbar}>
         <Text style={st.brand}>📘 Pregled ocena</Text>
         {p.demo ? <Text style={st.pill}>PROBNI PRIKAZ</Text> : null}
+        {p.subjects.length ? (
+          <Pressable onPress={p.onShare} style={st.logout} accessibilityLabel="Podeli pregled ocena">
+            <Text style={st.logoutText}>Podeli</Text>
+          </Pressable>
+        ) : null}
         <Pressable onPress={p.onLogout} style={st.logout}>
           <Text style={st.logoutText}>{p.demo ? 'Izlaz' : 'Odjava'}</Text>
         </Pressable>
@@ -242,7 +255,14 @@ export default function GradesScreen(p: Props) {
             <Text style={st.heroSub}>
               {p.selected.schoolName} · razred <Text style={{ fontWeight: '800' }}>{p.selected.section}</Text> · {p.selected.yearLabel}
             </Text>
-            {!p.isCurrent ? <Text style={st.warnPill}>ranija godina</Text> : null}
+            {!p.isCurrent ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <Text style={[st.warnPill, { marginTop: 0 }]}>ranija godina</Text>
+                <Pressable onPress={p.onBackToCurrent} style={st.backBtn}>
+                  <Text style={st.backBtnText}>↩ Tekući razred</Text>
+                </Pressable>
+              </View>
+            ) : null}
           </View>
         </View>
         {p.subjects.length ? (
@@ -313,7 +333,29 @@ export default function GradesScreen(p: Props) {
         </View>
       ) : null}
 
-      {!p.subjects.length ? (
+      {p.error ? (
+        <View style={[card, { backgroundColor: C.dangerBg }]}>
+          <Text style={{ color: C.danger, fontWeight: '600' }}>{p.error}</Text>
+        </View>
+      ) : null}
+
+      <View style={st.segment}>
+        {(
+          [
+            ['grades', '📚 Ocene'],
+            ['absents', '🕒 Izostanci'],
+            ['behavior', '🏅 Vladanje'],
+          ] as const
+        ).map(([k, label]) => (
+          <Pressable key={k} onPress={() => p.onSection(k)} style={[st.segBtn, p.section === k && st.segBtnActive]} accessibilityRole="tab">
+            <Text style={[st.segText, p.section === k && st.segTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {p.section !== 'grades' ? (
+        <SectionView kind={p.section} state={p.sectionState} />
+      ) : !p.subjects.length ? (
         <View style={card}>
           <Text style={st.muted}>Za ovaj razred još nema upisanih ocena.</Text>
         </View>
@@ -383,8 +425,18 @@ export default function GradesScreen(p: Props) {
           ))}
         </>
       )}
-      {p.subjects.length ? <TrendChart subjects={p.subjects} /> : null}
+      {p.section === 'grades' && p.subjects.length ? <TrendChart subjects={p.subjects} /> : null}
       {!p.demo ? <NotifyCard {...p.notify} /> : null}
+      {!p.demo && p.security.available ? (
+        <View style={[card, { flexDirection: 'row', alignItems: 'center' }]}>
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            <Text style={st.statLabel}>🔒 ZAŠTITA</Text>
+            <Text style={{ color: C.text, fontSize: 15, fontWeight: '600', marginTop: 6 }}>Otvaranje otiskom prsta</Text>
+            <Text style={st.small}>Pri pokretanju aplikacija traži otisak prsta (ili otključavanje telefona).</Text>
+          </View>
+          <Switch value={p.security.on} onValueChange={p.security.onToggle} trackColor={{ true: C.primary, false: C.line }} thumbColor="#ffffff" />
+        </View>
+      ) : null}
       <ThemePicker value={p.themeChoice} onChange={p.onThemeChange} />
       <Text style={st.footer}>Podaci se preuzimaju sa moj.esdnevnik.rs i ostaju samo na ovom telefonu.{'\n'}Povucite nadole za osvežavanje.</Text>
     </ScrollView>
@@ -394,6 +446,13 @@ export default function GradesScreen(p: Props) {
 const makeStyles = (C: Palette) =>
   StyleSheet.create({
   card: cardStyle(C),
+  segment: { flexDirection: 'row', backgroundColor: C.card, borderRadius: 14, padding: 4, marginTop: 12, borderWidth: 1, borderColor: C.line },
+  segBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  segBtnActive: { backgroundColor: C.primary },
+  segText: { color: C.text, fontWeight: '600', fontSize: 14 },
+  segTextActive: { color: C.onPrimary, fontWeight: '800' },
+  backBtn: { backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  backBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },
   wrap: { padding: 14, paddingBottom: 40 },
   topbar: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   brand: { fontSize: 18, fontWeight: '700', color: C.text, flex: 1 },

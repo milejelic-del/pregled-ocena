@@ -61,3 +61,25 @@ test('new grades are detected by fingerprint', () => {
   const t = notificationText('Ana Petrović', { subject: 'Matematika', grade: { ...copy, value: 5 } });
   assert.match(t.title, /^🌟 Ana: ocena 5 iz predmeta Matematika$/);
 });
+
+import { gradeValue } from '../src/html';
+
+test('grade value from various symbol formats', () => {
+  assert.equal(gradeValue('5', 'одличан'), 5);
+  assert.equal(gradeValue('4 врлодобар', ''), 4);
+  assert.equal(gradeValue('одличан (5)', 'одличан (5)'), 5);
+  assert.equal(gradeValue('', 'добар (3)'), 3);
+  assert.equal(gradeValue('', 'довољан'), 2);
+  assert.equal(gradeValue('истиче се', 'истиче се'), null);
+  assert.equal(gradeValue('4,5', ''), null);
+});
+
+import { overview, shareText } from '../src/grades';
+
+test('share text lists subjects and average', () => {
+  const subjects = parseGrades(demo.grades);
+  const t = shareText('Ана Петровић', 'VI 2 · 25/26', subjects, overview(subjects));
+  assert.match(t, /^📚 Ана Петровић · VI 2 · 25\/26\nProsek: \d,\d\d/);
+  assert.ok(t.includes('Математика: '));
+  assert.ok(!t.includes('undefined') && !t.includes('null'));
+});
