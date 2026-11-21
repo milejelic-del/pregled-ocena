@@ -367,7 +367,10 @@ export default function App() {
       const current = () => req === sectionReq.current;
       if (kind === 'grades' || kind === 'schedule' || !cls) return;
       const ck = offline.classKey(cls);
-      const failMsg = (e: unknown) => (e instanceof PortalError ? e.message : 'Učitavanje nije uspelo. Povucite nadole za ponovni pokušaj.');
+      const failMsg = (e: unknown) =>
+        e instanceof PortalError
+          ? e.message
+          : `Učitavanje nije uspelo. Povucite nadole za ponovni pokušaj.${e instanceof Error && e.message ? `\n(${e.message.slice(0, 120)})` : ''}`;
       if (kind === 'tests') {
         const key = `tests|${cls.portalKey ?? cls.studentClassId}`;
         const mem = testsCache.current.get(key);

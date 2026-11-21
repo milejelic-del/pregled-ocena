@@ -30,6 +30,53 @@ export function decodeEntities(s: string): string {
   return out;
 }
 
+// ---- Rad sa velikim stranicama bez „raspona“ u regularnim izrazima ----
+// Hermes (JS mašina na telefonu) ume da pukne („Maximum regex stack depth“) na izrazima
+// poput <script[\s\S]*?</script> kada je sadržaj dugačak. Zato ovde idemo preko indexOf.
+
+/** Uklanja elemente datih tagova zajedno sa sadržajem (npr. script, style, svg). */
+export function cutTags(html: string, tags: string[], repl = ' '): string {
+  const low = html.toLowerCase();
+  let out = '';
+  let pos = 0;
+  for (;;) {
+    let best = -1;
+    let bestTag = '';
+    for (const t of tags) {
+      let i = low.indexOf('<' + t, pos);
+      while (i >= 0 && /[a-z0-9-]/.test(low[i + 1 + t.length] ?? '')) i = low.indexOf('<' + t, i + 1);
+      if (i >= 0 && (best < 0 || i < best)) {
+        best = i;
+        bestTag = t;
+      }
+    }
+    if (best < 0) break;
+    const close = low.indexOf('</' + bestTag, best);
+    const end = close < 0 ? low.length : low.indexOf('>', close) + 1 || low.length;
+    out += html.slice(pos, best) + repl;
+    pos = end;
+  }
+  return out + html.slice(pos);
+}
+
+/** Sadržaji elemenata koji počinju sa `open` (npr. '<tr') i završavaju se sa `close` (npr. '</tr>'). */
+export function inners(html: string, open: string, close: string): string[] {
+  const low = html.toLowerCase();
+  const out: string[] = [];
+  let pos = 0;
+  for (;;) {
+    let i = low.indexOf(open, pos);
+    while (i >= 0 && /[a-z0-9-]/.test(low[i + open.length] ?? '')) i = low.indexOf(open, i + 1);
+    if (i < 0) break;
+    const gt = low.indexOf('>', i);
+    if (gt < 0) break;
+    const end = low.indexOf(close, gt);
+    out.push(html.slice(gt + 1, end < 0 ? html.length : end));
+    pos = end < 0 ? html.length : end + close.length;
+  }
+  return out;
+}
+
 export function textOf(html: string): string {
   return decodeEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 }
@@ -283,8 +330,8 @@ export interface PageBlock {
 function segments(html: string): string[] {
   const first = html.indexOf('<');
   if (first > 0 && /^[^<]*">/.test(html)) html = html.slice(first); // odsečen kraj taga na početku
-  return html
-    .replace(/<(script|style|svg)[\s\S]*?<\/\1>/g, ' ')
+  const clean = cutTags(html, ['script', 'style', 'svg']);
+  return clean
     .split(/<[^>]+>/)
     .map((t) => decodeEntities(t).replace(/\s+/g, ' ').replace(/^[•·\s\u00a0]+/, '').trim())
     .filter((t) => t && t !== '-' && !/^[\w\s-]*"\s*\/?>$/.test(t) && !/="[^"]*"/.test(t));
@@ -307,10 +354,13 @@ function mergeDates(lines: string[]): string[] {
 /** Kartice (tabovi) na stranici: dugme/link sa #id i panel sa tim id-jem. */
 function tabPanes(body: string): PageBlock[] {
   const tabs: { id: string; label: string }[] = [];
-  const re = /<(a|button|li)\b[^>]*(?:data-bs-target|data-target|href|aria-controls)="#?([A-Za-z][\w-]*)"[^>]*>([\s\S]*?)<\/\1>/g;
+  const re = /<(a|button|li)\b[^>]*(?:data-bs-target|data-target|href|aria-controls)="#?([A-Za-z][\w-]*)"[^>]*>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(body))) {
-    const [, , id, inner] = m;
+    const [, tag, id] = m;
+    const from = m.index + m[0].length;
+    const close = body.indexOf(`</${tag}>`, from);
+    const inner = body.slice(from, close < 0 ? Math.min(body.length, from + 500) : Math.min(close, from + 2000));
     const label = textOf(inner);
     if (label && !tabs.some((t) => t.id === id) && new RegExp(`id="${id}"`).test(body)) tabs.push({ id, label });
   }
@@ -334,12 +384,20 @@ function mainPart(html: string): string {
   if (start < 0) start = Math.max(0, html.indexOf('<body'));
   // kreni od početka taga, da ostatak atributa (class="… container">) ne završi kao tekst
   else start = Math.max(0, html.lastIndexOf('<', start));
-  return html
-    .slice(start)
-    .replace(/<(script|style|svg)[\s\S]*?<\/\1>/g, ' ')
-    .replace(/<(nav|footer)\b[\s\S]*?<\/\1>/g, ' ')
-    .replace(/<div class="modal[\s"][\s\S]*$/, ' ')
-    .replace(/<div class="dropdown-menu[\s\S]*?<\/div>/g, ' ');
+  let body = cutTags(html.slice(start), ['script', 'style', 'svg', 'nav', 'footer']);
+  const modal = body.search(/<div class="modal[\s"]/);
+  if (modal >= 0) body = body.slice(0, modal);
+  // padajući meniji: od '<div class="dropdown-menu' do prvog '</div>'
+  let out = '';
+  let pos = 0;
+  for (;;) {
+    const i = body.indexOf('<div class="dropdown-menu', pos);
+    if (i < 0) break;
+    const e = body.indexOf('</div>', i);
+    out += body.slice(pos, i) + ' ';
+    pos = e < 0 ? body.length : e + 6;
+  }
+  return out + body.slice(pos);
 }
 
 /**
@@ -365,14 +423,27 @@ export function parsePageBlocks(html: string): PageBlock[] {
     return out.filter((b) => b.title || b.lines.length);
   }
   if (/<table/.test(body)) {
-    const re = /<table[\s\S]*?<\/table>/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(body))) {
-      const before = body.slice(Math.max(0, m.index - 1500), m.index);
-      const heads = [...before.matchAll(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/g)];
+    const low = body.toLowerCase();
+    let pos = 0;
+    for (;;) {
+      const ti = low.indexOf('<table', pos);
+      if (ti < 0) break;
+      const te = low.indexOf('</table>', ti);
+      const table = body.slice(ti, te < 0 ? body.length : te);
+      pos = te < 0 ? body.length : te + 8;
+      const before = body.slice(Math.max(0, ti - 1500), ti);
+      const heads = [...before.matchAll(/<h[1-6][^>]*>([^<]*(?:<(?!\/h[1-6])[^<]*)*)<\/h[1-6]>/g)];
       const title = heads.length ? textOf(heads[heads.length - 1][1]) : '';
-      const rows = [...m[0].matchAll(/<tr[\s\S]*?<\/tr>/g)].map((r) =>
-        [...r[0].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/g)].map((c) => textOf(c[1])).filter(Boolean).join(' · '),
+      const rows = inners(table, '<tr', '</tr>').map((r) =>
+        r
+          .split(/<t[hd]\b[^>]*>/i)
+          .slice(1)
+          .map((c) => {
+            const k = c.search(/<\/t[hd]>/i);
+            return textOf(k < 0 ? c : c.slice(0, k));
+          })
+          .filter(Boolean)
+          .join(' · '),
       );
       out.push({ title, summary: [], lines: rows.filter(Boolean) });
     }
@@ -402,7 +473,13 @@ export interface CalEvent {
 /** Događaji iz <mini-event-calendar :events='[...]'> na početnoj strani portala. */
 export function parseCalendarEvents(html: string): CalEvent[] {
   const out: CalEvent[] = [];
-  for (const p of componentProps(html)) {
+  let props: Prop[];
+  try {
+    props = componentProps(html);
+  } catch {
+    props = eventAttrs(html);
+  }
+  for (const p of props) {
     if (!/event/i.test(p.tag + p.name) || !Array.isArray(p.json)) continue;
     for (const e of p.json as any[]) {
       if (!e || typeof e !== 'object') continue;
@@ -416,6 +493,30 @@ export function parseCalendarEvents(html: string): CalEvent[] {
   return out
     .filter((e) => (seen.has(e.date + e.title) ? false : (seen.add(e.date + e.title), true)))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Rezervni put bez velikih regularnih izraza: vrednosti atributa *events='...' / *events="...". */
+function eventAttrs(html: string): Prop[] {
+  const out: Prop[] = [];
+  let pos = 0;
+  for (;;) {
+    const i = html.indexOf('events=', pos);
+    if (i < 0) break;
+    const q = html[i + 7];
+    const end = q === '"' || q === "'" ? html.indexOf(q, i + 8) : -1;
+    pos = i + 7;
+    if (end < 0) continue;
+    const raw = decodeEntities(html.slice(i + 8, end));
+    const prop: Prop = { tag: 'event-calendar', name: ':events', raw };
+    try {
+      prop.json = JSON.parse(raw.trim());
+    } catch {
+      /* nije JSON */
+    }
+    out.push(prop);
+    pos = end;
+  }
+  return out;
 }
 
 /** Da li naslov liči na proveru znanja (kontrolni, pismeni, test...). */

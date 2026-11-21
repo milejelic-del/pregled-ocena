@@ -272,8 +272,12 @@ export class PortalClient {
     // stranica ocena se otvara samo kad treba prebaciti razred (inače je to suvišan spor zahtev)
     if (cls.portalKey && cls.portalKey !== this.serverActive) await this.openGradesFor(cls);
     const page = await this.getHtml(path);
-    this.learnMenu(page.html);
-    return parsePageBlocks(page.html);
+    try {
+      this.learnMenu(page.html);
+      return parsePageBlocks(page.html);
+    } catch (e) {
+      throw new PortalError(`Stranica nije mogla da se pročita (${e instanceof Error ? e.message : String(e)}).`);
+    }
   }
 
   /** Najave provera: kalendar sa početne strane i stranica rasporeda provera. */
@@ -289,12 +293,25 @@ export class PortalClient {
         return null;
       }),
     ]);
-    this.learnMenu(home.html);
-    const events = parseCalendarEvents(home.html);
+    // svaki deo posebno: ako jedan ne uspe da se pročita, drugi se ipak prikaže
+    let events: CalEvent[] = [];
     let blocks: PageBlock[] = [];
+    let err: unknown = null;
+    try {
+      this.learnMenu(home.html);
+      events = parseCalendarEvents(home.html);
+    } catch (e) {
+      err = e;
+    }
     if (sched) {
-      this.learnMenu(sched.html);
-      blocks = parsePageBlocks(sched.html);
+      try {
+        blocks = parsePageBlocks(sched.html);
+      } catch (e) {
+        err = err ?? e;
+      }
+    }
+    if (err && !events.length && !blocks.length) {
+      throw new PortalError(`Najave provera nisu mogle da se pročitaju (${err instanceof Error ? err.message : String(err)}).`);
     }
     return { events, blocks };
   }
