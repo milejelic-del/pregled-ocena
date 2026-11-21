@@ -27,6 +27,7 @@ interface Props {
   onThemeChange: (t: ThemeChoice) => void;
   notify: NotifyProps;
   error: string | null;
+  notice?: string | null;
   section: SectionKey;
   onSection: (s: SectionKey) => void;
   sectionState: SectionState;
@@ -309,6 +310,12 @@ export default function GradesScreen(p: Props) {
               </Pressable>
             );
           })}
+        </View>
+      ) : null}
+      {p.notice ? (
+        <View style={[card, { backgroundColor: C.warnBg }]}>
+          <Text style={{ color: C.text, fontWeight: '600' }}>{p.notice}</Text>
+          <Text style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>Povucite nadole kada se veza vrati.</Text>
         </View>
       ) : null}
       {p.error ? (

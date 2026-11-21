@@ -6,7 +6,8 @@ import demoData from './src/demoData.json';
 import { overview, parseGrades, shareText, Subject } from './src/grades';
 import GradesScreen from './src/GradesScreen';
 import LoginScreen from './src/LoginScreen';
-import { currentClass, LoginError, parseStudents, PortalClient, PortalError, Student, StudentClass } from './src/portal';
+import { currentClass, LoginError, NetworkError, parseStudents, PortalClient, PortalError, Student, StudentClass } from './src/portal';
+import * as offline from './src/offline';
 import * as storage from './src/storage';
 import * as bg from './src/background';
 import { biometricAvailable, unlock } from './src/biometric';
@@ -70,6 +71,16 @@ export default function App() {
   useEffect(() => {
     storage.loadTheme().then((t) => t && setThemeChoice(t));
   }, []);
+  // Rad bez interneta: poruka kada su prikazani sačuvani podaci
+  const [offlineNote, setOfflineNote] = useState<string | null>(null);
+  const modeRef = useRef(mode);
+  const demoRef = useRef(demo);
+  demoRef.current = demo;
+  modeRef.current = mode;
+  const showOffline = useCallback(() => {
+    const d = offline.load();
+    setOfflineNote(`📴 Bez interneta. Prikazani su podaci sačuvani ${d ? offline.savedLabel(d.savedAt) : 'ranije'}.`);
+  }, []);
   const [section, setSection] = useState<SectionKey>('grades');
   const [sectionState, setSectionState] = useState<SectionState>({ loading: false, blocks: null, error: null });
   const sectionCache = useRef(new Map<string, PageBlock[]>());
@@ -120,10 +131,14 @@ export default function App() {
   };
 
   const fail = useCallback((e: unknown) => {
+    if (e instanceof NetworkError && modeRef.current === 'grades' && !demoRef.current) {
+      showOffline();
+      return;
+    }
     const msg = e instanceof PortalError ? e.message : 'Došlo je do neočekivane greške. Pokušajte ponovo.';
     if (e instanceof LoginError || !client.current.loggedIn) setMode('login');
     setError(msg);
-  }, []);
+  }, [showOffline]);
 
   // Provere: jedno učitavanje po razredu u isto vreme; pokreće se odmah posle ocena, da kartica bude spremna
   const testsInflight = useRef(new Map<string, Promise<{ events: CalEvent[]; blocks: PageBlock[] }>>());
@@ -140,6 +155,7 @@ export default function App() {
       }
       const r = await client.current.getUpcoming(cls);
       testsCache.current.set(key, r);
+      offline.saveTests(cls, r);
       return r;
     })().finally(() => testsInflight.current.delete(key));
     testsInflight.current.set(key, pr);
@@ -148,15 +164,28 @@ export default function App() {
 
   const loadGrades = useCallback(
     async (cls: StudentClass, isDemo = demo, owner?: Student | null) => {
-      const raw = isDemo ? demoData.grades : await client.current.getGrades(cls);
-      const parsed = parseGrades(raw);
+      let parsed: Subject[];
+      try {
+        parsed = parseGrades(isDemo ? demoData.grades : await client.current.getGrades(cls));
+      } catch (e) {
+        const cached = !isDemo && e instanceof NetworkError ? offline.load()?.grades[offline.classKey(cls)] : undefined;
+        if (!cached) throw e;
+        setSelected(cls);
+        setSubjects(cached);
+        showOffline();
+        return;
+      }
       setSelected(cls);
       setSubjects(parsed);
       setError(null);
+      if (!isDemo) {
+        setOfflineNote(null);
+        offline.saveGrades(cls, parsed);
+      }
       if (!isDemo && owner) bg.rememberSeen(owner, cls, parsed);
       if (!isDemo) fetchTests(cls).catch(() => 0);
     },
-    [demo, fetchTests],
+    [demo, fetchTests, showOffline],
   );
 
   const loadAll = useCallback(
@@ -166,6 +195,7 @@ export default function App() {
       const st = list.find((s) => s.id === keepStudentId) ?? list[0];
       setStudents(list);
       setStudentId(st.id);
+      if (!isDemo) offline.saveStudents(list, st.id);
       await loadGrades(currentClass(st)!, isDemo, st);
       setError(null);
       setMode('grades');
@@ -207,6 +237,29 @@ export default function App() {
         setSavedUsername(saved.username);
         setMode('login');
         if (bio && !(await unlock())) return; // ostaje na ekranu za prijavu sa dugmetom za sačuvani nalog
+        const d = offline.load();
+        const st = d?.students.find((s) => s.id === d.studentId) ?? d?.students[0];
+        const cls = st ? currentClass(st) : null;
+        const cached = d && cls ? d.grades[offline.classKey(cls)] : undefined;
+        if (d && st && cls && cached) {
+          // odmah prikaži poslednje sačuvane podatke, pa osveži sa portala
+          setStudents(d.students);
+          setStudentId(st.id);
+          setSelected(cls);
+          setSubjects(cached);
+          setMode('grades');
+          modeRef.current = 'grades';
+          setRefreshing(true);
+          try {
+            await client.current.login(saved.username, saved.password);
+            await loadAll(false, st.id);
+          } catch (e) {
+            fail(e);
+          } finally {
+            setRefreshing(false);
+          }
+          return;
+        }
         await login(saved.username, saved.password, false);
       } else {
         setMode('login');
@@ -223,6 +276,7 @@ export default function App() {
   const forget = async () => {
     await storage.deleteCredentials();
     await bg.disableNotifications();
+    offline.clear();
     setNotifyOn(false);
     setSavedUsername(null);
     setError(null);
@@ -295,6 +349,11 @@ export default function App() {
           testsCache.current.set(key, r);
           setSectionState({ loading: false, blocks: r.blocks, events: r.events, error: null });
         } catch (e) {
+          const c = e instanceof NetworkError ? offline.load()?.tests[offline.classKey(cls)] : undefined;
+          if (c) {
+            showOffline();
+            return setSectionState({ loading: false, blocks: c.blocks, events: c.events, error: null });
+          }
           setSectionState({ loading: false, blocks: null, error: e instanceof PortalError ? e.message : 'Učitavanje nije uspelo. Povucite nadole za ponovni pokušaj.' });
         }
         return;
@@ -313,12 +372,18 @@ export default function App() {
         }
         const blocks = demo ? DEMO_SECTIONS[kind as 'absents' | 'behavior'] : await client.current.getSection(kind === 'absents' ? '/absents' : '/behavior', cls);
         sectionCache.current.set(key, blocks);
+        if (!demo) offline.saveSection(kind, cls, blocks);
         setSectionState({ loading: false, blocks, error: null });
       } catch (e) {
+        const c = e instanceof NetworkError ? offline.load()?.sections[`${kind}|${offline.classKey(cls)}`] : undefined;
+        if (c) {
+          showOffline();
+          return setSectionState({ loading: false, blocks: c, error: null });
+        }
         setSectionState({ loading: false, blocks: null, error: e instanceof PortalError ? e.message : 'Učitavanje nije uspelo. Povucite nadole za ponovni pokušaj.' });
       }
     },
-    [demo, fetchTests],
+    [demo, fetchTests, showOffline],
   );
   useEffect(() => {
     loadSection(section, selected);
@@ -382,6 +447,7 @@ export default function App() {
             themeChoice={themeChoice}
             onThemeChange={changeTheme}
             error={error}
+            notice={offlineNote}
             section={section}
             onSection={setSection}
             sectionState={sectionState}

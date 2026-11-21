@@ -2,7 +2,7 @@
   "expo": {
     "name": "Petica",
     "slug": "ednevnik-pregled-ocena",
-    "version": "1.5.2",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "ios": {
@@ -25,7 +25,7 @@
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "allowBackup": false,
-      "versionCode": 15
+      "versionCode": 16
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -44,7 +44,7 @@
         "expo-build-properties",
         {
           "android": {
-            "extraProguardRules": "# WorkManager (provera ocena u pozadini) koristi Room; R8 ne sme da ukloni konstruktore baze\n-keep class * extends androidx.room.RoomDatabase { <init>(...); }\n-keep class androidx.work.impl.** { *; }\n-keep class androidx.room.** { *; }\n-keep class androidx.startup.** { *; }\n"
+            "extraProguardRules": "# WorkManager (provera ocena u pozadini) koristi Room; R8 ne sme da ukloni konstruktore baze\n-keep class * extends androidx.room.RoomDatabase { <init>(...); }\n-keep class androidx.work.impl.** { *; }\n-keep class androidx.room.** { *; }\n-keep class androidx.startup.** { *; }\n\n-keep class com.reactnativeandroidwidget.** { *; }"
           }
         }
       ],
@@ -52,6 +52,25 @@
         "expo-local-authentication",
         {
           "faceIDPermission": "Aplikacija koristi Face ID da zaštiti pregled ocena."
+        }
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Petica",
+              "label": "Petica",
+              "description": "Prosek, poslednja ocena i sledeća provera",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "previewImage": "./assets/widget-preview.png",
+              "updatePeriodMillis": 1800000
+            }
+          ]
         }
       ]
     ],

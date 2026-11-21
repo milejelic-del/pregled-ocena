@@ -30,6 +30,8 @@ export const DEFAULT_BASE_URL = 'https://moj.esdnevnik.rs';
 
 export class PortalError extends Error {}
 export class LoginError extends PortalError {}
+/** Nema veze sa portalom (internet). */
+export class NetworkError extends PortalError {}
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -89,7 +91,7 @@ export class PortalClient {
         headers: { ...HEADERS, ...(init.headers as Record<string, string>) },
       });
     } catch {
-      throw new PortalError('Portal moj.esdnevnik.rs nije dostupan. Proverite internet vezu.');
+      throw new NetworkError('Portal moj.esdnevnik.rs nije dostupan. Proverite internet vezu.');
     }
   }
 

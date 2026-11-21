@@ -11,6 +11,7 @@ import { Platform } from 'react-native';
 import { parseGrades, Subject } from './grades';
 import { findNew, fingerprints, NewGrade, notificationText, summaryText } from './newGrades';
 import { currentClass, PortalClient, Student, StudentClass } from './portal';
+import * as offline from './offline';
 import * as storage from './storage';
 
 export const TASK = 'proveri-nove-ocene';
@@ -90,6 +91,7 @@ export async function checkForNewGrades(): Promise<{ ok: boolean; fresh: number;
     const cls = currentClass(st);
     if (!cls) continue;
     const subjects = parseGrades(await client.getGrades(cls));
+    offline.saveGrades(cls, subjects); // i widget i rad bez interneta dobijaju sveže ocene
     const now = fingerprints(subjects);
     const key = keyOf(st, cls);
     const fresh = findNew(snap.classes[key], now);
