@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { APP_VERSION } from './version';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -127,7 +128,7 @@ export default function LoginScreen(p: Props) {
           <Text style={s.link}>Pogledaj probni prikaz sa izmišljenim podacima →</Text>
         </Pressable>
         <ThemePicker value={p.themeChoice} onChange={p.onThemeChange} />
-        <Text style={{ alignSelf: 'flex-end', color: C.muted, fontSize: 11, fontStyle: 'italic', opacity: 0.8, marginTop: 14 }}>by Mile Jelić</Text>
+        <Text style={{ alignSelf: 'flex-end', color: C.muted, fontSize: 11, fontStyle: 'italic', opacity: 0.8, marginTop: 14 }}>by Mile Jelić · Petica v{APP_VERSION}</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );

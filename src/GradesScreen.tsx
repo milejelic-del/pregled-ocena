@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { APP_VERSION } from './version';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { calculate, formatDate, GradeEntry, isRecent, Overview, PART_NAMES, PartSummary, Subject } from './grades';
 import TrendChart from './TrendChart';
@@ -419,7 +420,7 @@ export default function GradesScreen(p: Props) {
       {!p.demo ? <NotifyCard {...p.notify} security={p.security} /> : null}
       <ThemePicker value={p.themeChoice} onChange={p.onThemeChange} />
       <Text style={st.footer}>Podaci se preuzimaju sa moj.esdnevnik.rs i ostaju samo na ovom telefonu.{'\n'}Povucite nadole za osvežavanje.</Text>
-      <Text style={st.signature}>by Mile Jelić</Text>
+      <Text style={st.signature}>by Mile Jelić · Petica v{APP_VERSION}</Text>
     </ScrollView>
   );
 }
