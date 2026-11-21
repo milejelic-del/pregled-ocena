@@ -142,7 +142,17 @@ def home():
     if (g := guard()):
         return g
     # kao na pravom portalu: ?student=N na početnoj NE menja razred za ocene
-    events = h.escape(json.dumps([{"start": "2025-11-20", "title": "x"}]), quote=True)
+    import datetime as dt
+    today = dt.date.today()
+    def ev(days, title, color):
+        d = (today + dt.timedelta(days=days)).isoformat()
+        return {"start": d, "dbStart": d + " 00:00:00", "allDay": True, "title": title, "color": color,
+                "url": f"{BASE}/task-schedules", "display": "block"}
+    evs = [ev(-3, "Контролни задатак - Физика", "#e53935"), ev(1, "Писмени задатак - Математика", "#e53935"),
+           ev(5, "Тест - Енглески језик", "#1e88e5"), ev(5, "Контролни задатак - Историја", "#e53935")]
+    if session.get("active") == "6001":
+        evs = evs[:1]
+    events = h.escape(json.dumps(evs), quote=True)
     return (
         f'<html><body><top-notification-icon name="messages" url="{BASE}/messages" :notifications-count="0"></top-notification-icon>'
         f"{menu(session['active'])}<mini-event-calendar :events='{events}'></mini-event-calendar></body></html>"
@@ -199,6 +209,16 @@ def behavior():
     inner = ('<article class="es-card"><h4 class="es__card__title">Владање</h4><table class="table"><tr><th>Полугодиште</th><th>Оцена</th></tr>'
              '<tr><td>Прво полугодиште</td><td>примерно (5)</td></tr><tr><td>Друго полугодиште</td><td>-</td></tr></table></article>')
     return page(inner, "/behavior")
+
+
+@app.get("/task-schedules")
+def task_schedules():
+    if (g := guard()):
+        return g
+    inner = ('<article class="es-card"><h4 class="es__card__title">Распоред писмених провера</h4><table class="table">'
+             '<tr><th>Датум</th><th>Предмет</th><th>Врста</th></tr>'
+             '<tr><td>24. 11. 2026.</td><td>Математика</td><td>Писмени задатак</td></tr></table></article>')
+    return page(inner, "/task-schedules")
 
 
 @app.get("/logout")

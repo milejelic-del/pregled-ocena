@@ -22,6 +22,8 @@ import {
   shapeOf,
   parsePageBlocks,
   PageBlock,
+  parseCalendarEvents,
+  CalEvent,
 } from './html';
 
 export const DEFAULT_BASE_URL = 'https://moj.esdnevnik.rs';
@@ -265,6 +267,24 @@ export class PortalClient {
     return parsePageBlocks(page.html);
   }
 
+  /** Najave provera: kalendar sa početne strane i stranica rasporeda provera. */
+  async getUpcoming(cls: StudentClass): Promise<{ events: CalEvent[]; blocks: PageBlock[] }> {
+    if (this.mode === 'api') throw new PortalError('Ova stranica nije dostupna na ovom portalu.');
+    await this.openGradesFor(cls);
+    const home = await this.getHtml('/');
+    this.learnMenu(home.html);
+    const events = parseCalendarEvents(home.html);
+    let blocks: PageBlock[] = [];
+    try {
+      const page = await this.getHtml('/task-schedules');
+      this.learnMenu(page.html);
+      blocks = parsePageBlocks(page.html);
+    } catch (e) {
+      if (e instanceof LoginError) throw e;
+    }
+    return { events, blocks };
+  }
+
   /** Otvara /grades tako da je na portalu aktivan traženi razred. */
   private async openGradesFor(cls: StudentClass): Promise<{ html: string; url: string }> {
     const key = cls.portalKey;
@@ -294,7 +314,7 @@ export class PortalClient {
 
   /** Izveštaj o strukturi stranica — bez imena, ocena i drugih ličnih podataka. */
   async diagnose(): Promise<string> {
-    const lines: string[] = [`verzija: 4`];
+    const lines: string[] = [`verzija: 5`];
     const check = async (path: string, json: boolean) => {
       try {
         const r = await this.req(path, json ? { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } } : {});
@@ -314,6 +334,8 @@ export class PortalClient {
       const rows = parseStudentsMenu(home.body, this.baseUrl);
       lines.push(`meni: ${rows.length} razreda, aktivnih ${rows.filter((r) => r.active).length}, godine ${[...new Set(rows.map((r) => r.yearLabel))].join(' ')}`);
       describeProps(lines, '/', props);
+      const evs = parseCalendarEvents(home.body);
+      lines.push(`kalendar: ${evs.length} događaja, naslovi (maskirano): ${[...new Set(evs.map((e) => e.title.replace(/\d/g, 'N').replace(/[^\s\-–:.,()N]+/g, (w) => (w.length > 3 ? w.slice(0, 3) + '…' : w))))].slice(0, 12).join(' | ')}`);
       const links = [...new Set([...home.body.matchAll(/href="(https?:\/\/[^"]*esdnevnik[^"]*)"/g)].map((m) => maskPath(m[1])))];
       lines.push(`linkovi: ${links.join(' ')}`);
     }
@@ -354,7 +376,7 @@ export class PortalClient {
       }
     }
     // izostanci, vladanje, zaključne
-    for (const p of ['/absents', '/behavior', '/grades/final']) {
+    for (const p of ['/absents', '/behavior', '/task-schedules', '/grades/final']) {
       const pg = await check(p, false);
       if (!pg) continue;
       const blocksFound = parsePageBlocks(pg.body);

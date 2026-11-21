@@ -10,8 +10,21 @@ import { currentClass, LoginError, parseStudents, PortalClient, PortalError, Stu
 import * as storage from './src/storage';
 import * as bg from './src/background';
 import { biometricAvailable, unlock } from './src/biometric';
-import type { PageBlock } from './src/html';
+import type { CalEvent, PageBlock } from './src/html';
 import type { SectionKey, SectionState } from './src/SectionView';
+
+function demoTests(): { events: CalEvent[]; blocks: PageBlock[] } {
+  const d = (n: number) => new Date(Date.now() + n * 86400000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return {
+    events: [
+      { date: d(1), title: 'Писмени задатак - Математика', color: '#e53935' },
+      { date: d(4), title: 'Тест - Енглески језик', color: '#1e88e5' },
+      { date: d(4), title: 'Контролни задатак - Историја', color: '#e53935' },
+      { date: d(9), title: 'Контролни задатак - Физика', color: '#e53935' },
+    ],
+    blocks: [],
+  };
+}
 
 const DEMO_SECTIONS: Record<'absents' | 'behavior', PageBlock[]> = {
   absents: [
@@ -56,6 +69,7 @@ export default function App() {
   const [section, setSection] = useState<SectionKey>('grades');
   const [sectionState, setSectionState] = useState<SectionState>({ loading: false, blocks: null, error: null });
   const sectionCache = useRef(new Map<string, PageBlock[]>());
+  const testsCache = useRef(new Map<string, { events: CalEvent[]; blocks: PageBlock[] }>());
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioOn, setBioOn] = useState(false);
   const [notifyOn, setNotifyOn] = useState(false);
@@ -196,6 +210,7 @@ export default function App() {
     setSelected(null);
     setSection('grades');
     sectionCache.current.clear();
+    testsCache.current.clear();
     setMode('login');
   };
 
@@ -244,6 +259,24 @@ export default function App() {
   const loadSection = useCallback(
     async (kind: SectionKey, cls: StudentClass | null, force = false) => {
       if (kind === 'grades' || !cls) return;
+      if (kind === 'tests') {
+        const key = `tests|${cls.portalKey ?? cls.studentClassId}`;
+        const cached = testsCache.current.get(key);
+        if (cached && !force) return setSectionState({ loading: false, blocks: cached.blocks, events: cached.events, error: null });
+        setSectionState({ loading: true, blocks: null, error: null });
+        try {
+          if (!demo && !client.current.loggedIn) {
+            const saved = await storage.loadCredentials();
+            if (saved) await client.current.login(saved.username, saved.password);
+          }
+          const r = demo ? demoTests() : await client.current.getUpcoming(cls);
+          testsCache.current.set(key, r);
+          setSectionState({ loading: false, blocks: r.blocks, events: r.events, error: null });
+        } catch (e) {
+          setSectionState({ loading: false, blocks: null, error: e instanceof PortalError ? e.message : 'Učitavanje nije uspelo. Povucite nadole za ponovni pokušaj.' });
+        }
+        return;
+      }
       const key = `${kind}|${cls.portalKey ?? cls.studentClassId}`;
       const cached = sectionCache.current.get(key);
       if (cached && !force) {
@@ -256,7 +289,7 @@ export default function App() {
           const saved = await storage.loadCredentials();
           if (saved) await client.current.login(saved.username, saved.password);
         }
-        const blocks = demo ? DEMO_SECTIONS[kind] : await client.current.getSection(kind === 'absents' ? '/absents' : '/behavior', cls);
+        const blocks = demo ? DEMO_SECTIONS[kind as 'absents' | 'behavior'] : await client.current.getSection(kind === 'absents' ? '/absents' : '/behavior', cls);
         sectionCache.current.set(key, blocks);
         setSectionState({ loading: false, blocks, error: null });
       } catch (e) {

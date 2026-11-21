@@ -342,13 +342,17 @@ export default function GradesScreen(p: Props) {
       <View style={st.segment}>
         {(
           [
-            ['grades', '📚 Ocene'],
-            ['absents', '🕒 Izostanci'],
-            ['behavior', '🏅 Vladanje'],
+            ['grades', '📚', 'Ocene'],
+            ['tests', '📝', 'Provere'],
+            ['absents', '🕒', 'Izostanci'],
+            ['behavior', '🏅', 'Vladanje'],
           ] as const
-        ).map(([k, label]) => (
-          <Pressable key={k} onPress={() => p.onSection(k)} style={[st.segBtn, p.section === k && st.segBtnActive]} accessibilityRole="tab">
-            <Text style={[st.segText, p.section === k && st.segTextActive]}>{label}</Text>
+        ).map(([k, icon, label]) => (
+          <Pressable key={k} onPress={() => p.onSection(k)} style={[st.segBtn, p.section === k && st.segBtnActive]} accessibilityRole="tab" accessibilityLabel={label}>
+            <Text style={{ fontSize: 18 }}>{icon}</Text>
+            <Text style={[st.segText, p.section === k && st.segTextActive]} numberOfLines={1}>
+              {label}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -439,6 +443,7 @@ export default function GradesScreen(p: Props) {
       ) : null}
       <ThemePicker value={p.themeChoice} onChange={p.onThemeChange} />
       <Text style={st.footer}>Podaci se preuzimaju sa moj.esdnevnik.rs i ostaju samo na ovom telefonu.{'\n'}Povucite nadole za osvežavanje.</Text>
+      <Text style={st.signature}>by Mile Jelić</Text>
     </ScrollView>
   );
 }
@@ -446,10 +451,11 @@ export default function GradesScreen(p: Props) {
 const makeStyles = (C: Palette) =>
   StyleSheet.create({
   card: cardStyle(C),
+  signature: { alignSelf: 'flex-end', color: C.muted, fontSize: 11, fontStyle: 'italic', opacity: 0.8, marginTop: 6 },
   segment: { flexDirection: 'row', backgroundColor: C.card, borderRadius: 14, padding: 4, marginTop: 12, borderWidth: 1, borderColor: C.line },
-  segBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  segBtn: { flex: 1, paddingVertical: 7, borderRadius: 10, alignItems: 'center' },
   segBtnActive: { backgroundColor: C.primary },
-  segText: { color: C.text, fontWeight: '600', fontSize: 14 },
+  segText: { color: C.text, fontWeight: '600', fontSize: 12, marginTop: 1 },
   segTextActive: { color: C.onPrimary, fontWeight: '800' },
   backBtn: { backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
   backBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 12 },

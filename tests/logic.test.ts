@@ -139,3 +139,18 @@ test('back to the class that was active at login, from a fresh client', async ()
   const mat = parseGrades(await c.getGrades(cur)).find((s) => s.name === 'Математика')!;
   assert.ok(mat.allGrades[0].date.startsWith('2025'));
 });
+
+test('html portal: upcoming tests from the home calendar', async () => {
+  const c = new PortalClient(HTML_BASE, cookieFetch());
+  await c.login('roditelj.test', 'TajnaLozinka1!');
+  const st = await c.getStudents();
+  const cur = currentClass(st[0])!;
+  const r = await c.getUpcoming(cur);
+  assert.equal(r.events.length, 4);
+  assert.equal(r.events[1].title, 'Писмени задатак - Математика');
+  assert.ok(r.events.every((e) => /^\d{4}-\d{2}-\d{2}$/.test(e.date)));
+  assert.equal(r.blocks[0].title, 'Распоред писмених провера');
+  assert.equal(r.blocks[0].lines[1], '24. 11. 2026. · Математика · Писмени задатак');
+  const old = st[0].classes.find((k) => k.yearLabel === '24/25')!;
+  assert.equal((await c.getUpcoming(old)).events.length, 1);
+});

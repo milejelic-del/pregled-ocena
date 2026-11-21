@@ -346,3 +346,35 @@ export function parsePageBlocks(html: string): PageBlock[] {
   }
   return out;
 }
+
+// ---------------- Najave provera (kalendar na početnoj) ----------------
+
+export interface CalEvent {
+  date: string; // ISO yyyy-mm-dd
+  title: string;
+  color: string;
+}
+
+/** Događaji iz <mini-event-calendar :events='[...]'> na početnoj strani portala. */
+export function parseCalendarEvents(html: string): CalEvent[] {
+  const out: CalEvent[] = [];
+  for (const p of componentProps(html)) {
+    if (!/event/i.test(p.tag + p.name) || !Array.isArray(p.json)) continue;
+    for (const e of p.json as any[]) {
+      if (!e || typeof e !== 'object') continue;
+      const raw = String(e.dbStart ?? e.start ?? e.date ?? '');
+      const iso = raw.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? toIsoDate(raw);
+      const title = textOf(String(e.title ?? e.name ?? ''));
+      if (iso && title) out.push({ date: iso, title, color: String(e.color ?? '') });
+    }
+  }
+  const seen = new Set<string>();
+  return out
+    .filter((e) => (seen.has(e.date + e.title) ? false : (seen.add(e.date + e.title), true)))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Da li naslov liči na proveru znanja (kontrolni, pismeni, test...). */
+export function isTest(title: string): boolean {
+  return /контрол|kontrol|писмен|pismen|тест|test|провер|prover|испит|ispit|квиз|kviz|усмен|usmen/i.test(title);
+}
