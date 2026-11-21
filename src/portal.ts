@@ -84,14 +84,20 @@ export class PortalClient {
   }
 
   private async req(path: string, init: RequestInit = {}): Promise<Response> {
+    // bez odgovora 25 s -> prekid, da aplikacija ne čeka unedogled na lošoj vezi
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 25000) : null;
     try {
       return await this.fetchFn(this.baseUrl + path, {
         credentials: 'include',
         ...init,
+        ...(ctrl ? { signal: ctrl.signal } : {}),
         headers: { ...HEADERS, ...(init.headers as Record<string, string>) },
       });
     } catch {
       throw new NetworkError('Portal moj.esdnevnik.rs nije dostupan. Proverite internet vezu.');
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -263,7 +269,8 @@ export class PortalClient {
   /** Druge stranice portala (izostanci, vladanje) za izabrani razred, kao blokovi teksta. */
   async getSection(path: '/absents' | '/behavior', cls: StudentClass): Promise<PageBlock[]> {
     if (this.mode === 'api') throw new PortalError('Ova stranica nije dostupna na ovom portalu.');
-    await this.openGradesFor(cls);
+    // stranica ocena se otvara samo kad treba prebaciti razred (inače je to suvišan spor zahtev)
+    if (cls.portalKey && cls.portalKey !== this.serverActive) await this.openGradesFor(cls);
     const page = await this.getHtml(path);
     this.learnMenu(page.html);
     return parsePageBlocks(page.html);

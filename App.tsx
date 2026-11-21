@@ -53,6 +53,20 @@ type Mode = 'starting' | 'login' | 'grades';
 
 export default function App() {
   const client = useRef(new PortalClient());
+  // Jedna prijava u isto vreme: kartice, provere i osvežavanje dele isto čekanje
+  const loginInflight = useRef<Promise<void> | null>(null);
+  const ensureLogin = useCallback(async (creds?: { username: string; password: string }) => {
+    if (client.current.loggedIn && !creds) return;
+    if (!loginInflight.current) {
+      loginInflight.current = (async () => {
+        const c = creds ?? (await storage.loadCredentials());
+        if (c) await client.current.login(c.username, c.password);
+      })().finally(() => {
+        loginInflight.current = null;
+      });
+    }
+    return loginInflight.current;
+  }, []);
   const [mode, setMode] = useState<Mode>('starting');
   const [demo, setDemo] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -163,10 +177,7 @@ export default function App() {
     const cached = testsCache.current.get(key);
     if (cached && !force) return Promise.resolve(cached);
     const pr = (async () => {
-      if (!client.current.loggedIn) {
-        const saved = await storage.loadCredentials();
-        if (saved) await client.current.login(saved.username, saved.password);
-      }
+      await ensureLogin();
       const r = await client.current.getUpcoming(cls);
       testsCache.current.set(key, r);
       offline.saveTests(cls, r);
@@ -174,7 +185,7 @@ export default function App() {
     })().finally(() => testsInflight.current.delete(key));
     testsInflight.current.set(key, pr);
     return pr;
-  }, []);
+  }, [ensureLogin]);
 
   const loadGrades = useCallback(
     async (cls: StudentClass, isDemo = demo, owner?: Student | null) => {
@@ -265,7 +276,7 @@ export default function App() {
           modeRef.current = 'grades';
           setRefreshing(true);
           try {
-            await client.current.login(saved.username, saved.password);
+            await ensureLogin(saved);
             await loadAll(false, st.id);
           } catch (e) {
             fail(e);
@@ -333,10 +344,7 @@ export default function App() {
     setRefreshing(true);
     try {
       if (selected) {
-        if (!demo && !client.current.loggedIn) {
-          const saved = await storage.loadCredentials();
-          if (saved) await client.current.login(saved.username, saved.password);
-        }
+        if (!demo) await ensureLogin();
         await loadGrades(selected, demo, students.find((s) => s.id === studentId));
         if (section !== 'grades') await loadSection(section, selected, true);
       }
@@ -350,54 +358,57 @@ export default function App() {
   const student = students.find((s) => s.id === studentId) ?? null;
 
   // Izostanci / vladanje: učitavaju se kad se otvori kartica, pa se pamte po razredu
+  // Kartica se menja odmah: prikazuje se ono što već imamo (memorija ili telefon), a sveži podaci stižu iza.
+  // Odgovor stigao za karticu koja više nije otvorena se ne prikazuje.
+  const sectionReq = useRef(0);
   const loadSection = useCallback(
     async (kind: SectionKey, cls: StudentClass | null, force = false) => {
+      const req = ++sectionReq.current;
+      const current = () => req === sectionReq.current;
       if (kind === 'grades' || kind === 'schedule' || !cls) return;
+      const ck = offline.classKey(cls);
+      const failMsg = (e: unknown) => (e instanceof PortalError ? e.message : 'Učitavanje nije uspelo. Povucite nadole za ponovni pokušaj.');
       if (kind === 'tests') {
         const key = `tests|${cls.portalKey ?? cls.studentClassId}`;
-        const cached = testsCache.current.get(key);
-        if (cached && !force) return setSectionState({ loading: false, blocks: cached.blocks, events: cached.events, error: null });
-        setSectionState({ loading: true, blocks: null, error: null });
+        const mem = testsCache.current.get(key);
+        if (mem && !force) return setSectionState({ loading: false, blocks: mem.blocks, events: mem.events, error: null });
+        const stored = demo ? undefined : offline.load()?.tests[ck];
+        setSectionState(stored ? { loading: false, blocks: stored.blocks, events: stored.events, error: null } : { loading: true, blocks: null, error: null });
         try {
           const r = demo ? demoTests() : await fetchTests(cls, force);
           testsCache.current.set(key, r);
-          setSectionState({ loading: false, blocks: r.blocks, events: r.events, error: null });
+          if (current()) setSectionState({ loading: false, blocks: r.blocks, events: r.events, error: null });
         } catch (e) {
-          const c = e instanceof NetworkError ? offline.load()?.tests[offline.classKey(cls)] : undefined;
-          if (c) {
-            showOffline();
-            return setSectionState({ loading: false, blocks: c.blocks, events: c.events, error: null });
+          if (!current()) return;
+          if (stored) {
+            if (e instanceof NetworkError) showOffline();
+            return;
           }
-          setSectionState({ loading: false, blocks: null, error: e instanceof PortalError ? e.message : 'Učitavanje nije uspelo. Povucite nadole za ponovni pokušaj.' });
+          setSectionState({ loading: false, blocks: null, error: failMsg(e) });
         }
         return;
       }
       const key = `${kind}|${cls.portalKey ?? cls.studentClassId}`;
-      const cached = sectionCache.current.get(key);
-      if (cached && !force) {
-        setSectionState({ loading: false, blocks: cached, error: null });
-        return;
-      }
-      setSectionState({ loading: true, blocks: null, error: null });
+      const mem = sectionCache.current.get(key);
+      if (mem && !force) return setSectionState({ loading: false, blocks: mem, error: null });
+      const stored = demo ? undefined : offline.load()?.sections[`${kind}|${ck}`];
+      setSectionState(stored ? { loading: false, blocks: stored, error: null } : { loading: true, blocks: null, error: null });
       try {
-        if (!demo && !client.current.loggedIn) {
-          const saved = await storage.loadCredentials();
-          if (saved) await client.current.login(saved.username, saved.password);
-        }
+        if (!demo) await ensureLogin();
         const blocks = demo ? DEMO_SECTIONS[kind as 'absents' | 'behavior'] : await client.current.getSection(kind === 'absents' ? '/absents' : '/behavior', cls);
         sectionCache.current.set(key, blocks);
         if (!demo) offline.saveSection(kind, cls, blocks);
-        setSectionState({ loading: false, blocks, error: null });
+        if (current()) setSectionState({ loading: false, blocks, error: null });
       } catch (e) {
-        const c = e instanceof NetworkError ? offline.load()?.sections[`${kind}|${offline.classKey(cls)}`] : undefined;
-        if (c) {
-          showOffline();
-          return setSectionState({ loading: false, blocks: c, error: null });
+        if (!current()) return;
+        if (stored) {
+          if (e instanceof NetworkError) showOffline();
+          return;
         }
-        setSectionState({ loading: false, blocks: null, error: e instanceof PortalError ? e.message : 'Učitavanje nije uspelo. Povucite nadole za ponovni pokušaj.' });
+        setSectionState({ loading: false, blocks: null, error: failMsg(e) });
       }
     },
-    [demo, fetchTests, showOffline],
+    [demo, fetchTests, showOffline, ensureLogin],
   );
   useEffect(() => {
     loadSection(section, selected);
