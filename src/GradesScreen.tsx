@@ -433,17 +433,7 @@ export default function GradesScreen(p: Props) {
         </>
       )}
       {p.section === 'grades' && p.subjects.length ? <TrendChart subjects={p.subjects} /> : null}
-      {!p.demo ? <NotifyCard {...p.notify} /> : null}
-      {!p.demo && p.security.available ? (
-        <View style={[card, { flexDirection: 'row', alignItems: 'center' }]}>
-          <View style={{ flex: 1, paddingRight: 10 }}>
-            <Text style={st.statLabel}>🔒 ZAŠTITA</Text>
-            <Text style={{ color: C.text, fontSize: 15, fontWeight: '600', marginTop: 6 }}>Otvaranje otiskom prsta</Text>
-            <Text style={st.small}>Pri pokretanju aplikacija traži otisak prsta (ili otključavanje telefona).</Text>
-          </View>
-          <Switch value={p.security.on} onValueChange={p.security.onToggle} trackColor={{ true: C.primary, false: C.line }} thumbColor="#ffffff" />
-        </View>
-      ) : null}
+      {!p.demo ? <NotifyCard {...p.notify} security={p.security} /> : null}
       <ThemePicker value={p.themeChoice} onChange={p.onThemeChange} />
       <Text style={st.footer}>Podaci se preuzimaju sa moj.esdnevnik.rs i ostaju samo na ovom telefonu.{'\n'}Povucite nadole za osvežavanje.</Text>
       <Text style={st.signature}>by Mile Jelić</Text>

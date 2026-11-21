@@ -130,7 +130,10 @@ function TestsView({ state }: { state: SectionState }) {
   const card = cardStyle(C);
   const todayIso = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const all = state.events ?? [];
-  const upcoming = all.filter((e) => e.date >= todayIso);
+  const limit = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+  limit.setDate(limit.getDate() + 30);
+  const limitIso = limit.toISOString().slice(0, 10);
+  const upcoming = all.filter((e) => e.date >= todayIso && e.date <= limitIso);
   const tests = upcoming.filter((e) => isTest(e.title));
   const list = tests.length ? tests : upcoming;
   const byDate = new Map<string, CalEvent[]>();
@@ -145,7 +148,7 @@ function TestsView({ state }: { state: SectionState }) {
       <View style={card}>
         <Text style={{ color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 0.4 }}>📝 NAJAVLJENE PROVERE</Text>
         {byDate.size === 0 ? (
-          <Text style={{ color: C.muted, marginTop: 8 }}>Nema najavljenih provera u narednom periodu. 🎉</Text>
+          <Text style={{ color: C.muted, marginTop: 8 }}>Nema najavljenih provera u narednih mesec dana. 🎉</Text>
         ) : (
           [...byDate.entries()].map(([date, evs]) => {
             const l = dayLabel(date);

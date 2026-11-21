@@ -10,20 +10,26 @@ export interface NotifyProps {
   onCheckNow: () => void;
 }
 
+export interface SecurityProps {
+  available: boolean;
+  on: boolean;
+  onToggle: (on: boolean) => void;
+}
+
 const hhmm = (d: Date) => {
   const p = (n: number) => String(n).padStart(2, '0');
   const today = new Date().toDateString() === d.toDateString();
   return `${today ? 'danas' : `${d.getDate()}.${d.getMonth() + 1}.`} u ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-export default function NotifyCard(p: NotifyProps) {
+export default function NotifyCard(p: NotifyProps & { security?: SecurityProps }) {
   const C = useTheme();
   return (
     <View style={cardStyle(C)}>
-      <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.4 }}>🔔 OBAVEŠTENJA</Text>
+      <Text style={{ color: C.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.4 }}>⚙️ PODEŠAVANJA</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
         <View style={{ flex: 1, paddingRight: 10 }}>
-          <Text style={{ color: C.text, fontSize: 15, fontWeight: '600' }}>Javi mi kad stigne nova ocena</Text>
+          <Text style={{ color: C.text, fontSize: 15, fontWeight: '600' }}>🔔 Javi mi kad stigne nova ocena</Text>
           <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>
             Provera otprilike na svaka 3 sata, i kad je aplikacija zatvorena.
           </Text>
@@ -47,6 +53,21 @@ export default function NotifyCard(p: NotifyProps) {
         {p.lastCheck ? <Text style={{ color: C.muted, fontSize: 12, flex: 1 }}>Poslednja provera: {hhmm(p.lastCheck)}</Text> : null}
       </View>
       {p.message ? <Text style={{ color: C.text, fontSize: 13, marginTop: 10 }}>{p.message}</Text> : null}
+      {p.security?.available ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.divider }}>
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            <Text style={{ color: C.text, fontSize: 15, fontWeight: '600' }}>🔒 Otvaranje otiskom prsta</Text>
+            <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>Pri pokretanju aplikacija traži otisak prsta (ili otključavanje telefona).</Text>
+          </View>
+          <Switch
+            value={p.security.on}
+            onValueChange={p.security.onToggle}
+            trackColor={{ true: C.primary, false: C.line }}
+            thumbColor="#ffffff"
+            accessibilityLabel="Otvaranje otiskom prsta"
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
