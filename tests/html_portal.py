@@ -206,9 +206,16 @@ def absents():
 def behavior():
     if (g := guard()):
         return g
-    inner = ('<article class="es-card"><h4 class="es__card__title">Владање</h4><table class="table"><tr><th>Полугодиште</th><th>Оцена</th></tr>'
-             '<tr><td>Прво полугодиште</td><td>примерно (5)</td></tr><tr><td>Друго полугодиште</td><td>-</td></tr></table></article>')
-    return page(inner, "/behavior")
+    # kao na pravom portalu (2026): tri kartice, podaci samo u prvoj
+    inner = ('<article class="es-card"><ul class="nav nav-tabs">'
+             '<li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#grades-tab">Оцене из владања</button></li>'
+             '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#measures-tab">Похвале и мере</button></li>'
+             '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#class-tab">Владање на часу</button></li></ul>'
+             '<div class="tab-content"><div class="tab-pane fade show active" id="grades-tab"><div class="row"><div class="col">04. 11. 2026.</div>'
+             '<div class="col"><span class="badge">Примерно (5)</span></div></div></div>'
+             '<div class="tab-pane fade" id="measures-tab"></div><div class="tab-pane fade" id="class-tab"></div></div></article>')
+    # bez sections-wrap, kao na pravom portalu
+    return '<html>' + menu(session["active"], "/behavior") + '<div class="main-content container">' + inner + '</div></html>'
 
 
 @app.get("/task-schedules")

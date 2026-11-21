@@ -281,17 +281,59 @@ export interface PageBlock {
 
 /** Tekstualni delovi HTML-a, po jedan za svaki komad teksta između tagova. */
 function segments(html: string): string[] {
+  const first = html.indexOf('<');
+  if (first > 0 && /^[^<]*">/.test(html)) html = html.slice(first); // odsečen kraj taga na početku
   return html
     .replace(/<(script|style|svg)[\s\S]*?<\/\1>/g, ' ')
     .split(/<[^>]+>/)
     .map((t) => decodeEntities(t).replace(/\s+/g, ' ').replace(/^[•·\s\u00a0]+/, '').trim())
-    .filter((t) => t && t !== '-');
+    .filter((t) => t && t !== '-' && !/^[\w-]*\s*(?:[\w-]+\s*)*"\s*\/?>$/.test(t) && !/="[^"]*"/.test(t));
+}
+
+const DATE_ONLY = /^\d{1,2}\.\s*\d{1,2}\.\s*\d{4}\.?$/;
+
+/** Spaja red koji je samo datum sa redom posle njega: „04. 11. 2026.“ + „Примерно (5)“. */
+function mergeDates(lines: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (DATE_ONLY.test(lines[i]) && i + 1 < lines.length && !DATE_ONLY.test(lines[i + 1])) {
+      out.push(`${lines[i]} · ${lines[i + 1]}`);
+      i++;
+    } else out.push(lines[i]);
+  }
+  return out;
+}
+
+/** Kartice (tabovi) na stranici: dugme/link sa #id i panel sa tim id-jem. */
+function tabPanes(body: string): PageBlock[] {
+  const tabs: { id: string; label: string }[] = [];
+  const re = /<(a|button|li)\b[^>]*(?:data-bs-target|data-target|href|aria-controls)="#?([A-Za-z][\w-]*)"[^>]*>([\s\S]*?)<\/\1>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) {
+    const [, , id, inner] = m;
+    const label = textOf(inner);
+    if (label && !tabs.some((t) => t.id === id) && new RegExp(`id="${id}"`).test(body)) tabs.push({ id, label });
+  }
+  if (tabs.length < 2) return [];
+  const starts = tabs.map((t) => {
+    const i = body.search(new RegExp(`id="${t.id}"`));
+    return Math.max(0, body.lastIndexOf('<', i));
+  });
+  const order = starts.map((st, i) => ({ st, i })).sort((a, b) => a.st - b.st);
+  return tabs.map((t, i) => {
+    const idx = order.findIndex((o) => o.i === i);
+    const end = order[idx + 1]?.st ?? body.length;
+    const pane = body.slice(starts[i], end).replace(/^<[^>]*>/, '');
+    return { title: t.label, summary: [], lines: mergeDates(segments(pane)).slice(0, 300) };
+  });
 }
 
 function mainPart(html: string): string {
   let start = html.indexOf('sections-wrap');
   if (start < 0) start = html.indexOf('main-content');
   if (start < 0) start = Math.max(0, html.indexOf('<body'));
+  // kreni od početka taga, da ostatak atributa (class="… container">) ne završi kao tekst
+  else start = Math.max(0, html.lastIndexOf('<', start));
   return html
     .slice(start)
     .replace(/<(script|style|svg)[\s\S]*?<\/\1>/g, ' ')
@@ -336,12 +378,14 @@ export function parsePageBlocks(html: string): PageBlock[] {
     }
     if (out.length) return out;
   }
+  const panes = tabPanes(body);
+  if (panes.length) return panes;
   const cards = body.split(/<article\b|<div class="es-card[\s"]/).slice(1);
   for (const c of cards.length ? cards : [body]) {
     const h = c.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/);
     const title = h ? textOf(h[1]) : '';
     const rest = h ? c.slice((h.index ?? 0) + h[0].length) : c;
-    const lines = segments(rest).slice(0, 300);
+    const lines = mergeDates(segments(rest)).slice(0, 300);
     if (title || lines.length) out.push({ title, summary: [], lines });
   }
   return out;

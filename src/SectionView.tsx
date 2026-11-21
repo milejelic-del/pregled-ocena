@@ -163,6 +163,7 @@ export default function SectionView({ kind, state }: { kind: 'absents' | 'behavi
               ))}
             </View>
           ) : null}
+          {!b.lines.length && !b.summary.length ? <Text style={{ color: C.muted, marginTop: 6 }}>Nema upisanih podataka.</Text> : null}
           {b.lines.map((l, j) => {
             const color = tone(l, C);
             return (

@@ -122,8 +122,10 @@ test('html portal: absences and behavior pages', async () => {
   const absOld = await c.getSection('/absents', old);
   assert.equal(absOld[0].lines.length, 1);
   const beh = await c.getSection('/behavior', cur);
-  assert.equal(beh[0].title, 'Владање');
-  assert.deepEqual(beh[0].lines, ['Полугодиште · Оцена', 'Прво полугодиште · примерно (5)', 'Друго полугодиште · -']);
+  assert.deepEqual(beh.map((b) => b.title), ['Оцене из владања', 'Похвале и мере', 'Владање на часу']);
+  assert.deepEqual(beh[0].lines, ['04. 11. 2026. · Примерно (5)']);
+  assert.deepEqual(beh[1].lines, []);
+  assert.ok(!JSON.stringify(beh).includes('container'));
   // nazad na tekući razred
   const back = await c.getSection('/absents', cur);
   assert.equal(back[0].lines.length, 3);
