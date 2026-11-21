@@ -33,6 +33,21 @@ tap() {
 }
 sleep 5
 dump; texts
+echo "=== PROZORI ==="; adb shell dumpsys window windows | grep -E "Window #|mCurrentFocus|mFocusedApp" | head -20
+echo "=== DODIR U POLJE ==="; c=$(center "Korisničko ime"); echo "polje oko $c"
+python3 - <<'PY'
+import re
+x=open('u.xml',encoding='utf-8',errors='ignore').read()
+for n in re.findall(r'<node [^>]*class="android.widget.EditText"[^>]*>',x): print(re.search(r'bounds="[^"]*"',n).group(0), 'focused', re.search(r'focused="(\w+)"',n).group(1))
+PY
+e=$(python3 -c "
+import re
+x=open('u.xml',encoding='utf-8',errors='ignore').read()
+b=re.findall(r'class=\"android.widget.EditText\"[^>]*bounds=\"\[(\d+),(\d+)\]\[(\d+),(\d+)\]\"',x)
+a=list(map(int,b[0])) if b else [0,0,0,0]; print((a[0]+a[2])//2,(a[1]+a[3])//2)")
+adb shell input tap $e; sleep 2; dump
+grep -o 'class="android.widget.EditText"[^>]*focused="[a-z]*"' u.xml | grep -o 'focused="[a-z]*"' | head -2
+echo "=== SKROL ==="; adb shell input swipe 540 1800 540 600 800; sleep 2; dump; texts
 tap "Pogledaj probni prikaz" "RASPODELA OCENA"
 tap "Provere" "NAREDNIH MESEC DANA"
 tap "Izostanci" "Енглески"
