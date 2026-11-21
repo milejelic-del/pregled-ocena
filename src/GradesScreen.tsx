@@ -233,7 +233,10 @@ export default function GradesScreen(p: Props) {
       refreshControl={<RefreshControl refreshing={p.refreshing} onRefresh={p.onRefresh} />}
     >
       <View style={st.topbar}>
-        <Text style={st.brand}>📘 Pregled ocena</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={st.brand} numberOfLines={1}>📘 Petica</Text>
+          <Text style={st.brandBy} numberOfLines={1}>by Mile Jelić</Text>
+        </View>
         {p.demo ? <Text style={st.pill}>PROBNI PRIKAZ</Text> : null}
         {p.subjects.length ? (
           <Pressable onPress={p.onShare} style={st.logout} accessibilityLabel="Podeli pregled ocena">
@@ -462,6 +465,7 @@ const makeStyles = (C: Palette) =>
   wrap: { padding: 14, paddingBottom: 40 },
   topbar: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   brand: { fontSize: 18, fontWeight: '700', color: C.text, flex: 1 },
+  brandBy: { fontSize: 11, fontStyle: 'italic', color: C.muted, marginLeft: 26, marginTop: -2 },
   pill: { backgroundColor: C.pillBg, color: C.pillText, fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
   logout: { borderWidth: 1, borderColor: C.line, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: C.card },
   logoutText: { color: C.text, fontSize: 13 },

@@ -11,7 +11,7 @@ export async function biometricAvailable(): Promise<boolean> {
   }
 }
 
-export async function unlock(reason = 'Otključajte Pregled ocena'): Promise<boolean> {
+export async function unlock(reason = 'Otključajte Peticu'): Promise<boolean> {
   try {
     const r = await LocalAuthentication.authenticateAsync({ promptMessage: reason, cancelLabel: 'Otkaži' });
     return r.success;

@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Pregled ocena",
+    "name": "Petica",
     "slug": "ednevnik-pregled-ocena",
-    "version": "1.4.3",
+    "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "ios": {
@@ -25,7 +25,7 @@
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "allowBackup": false,
-      "versionCode": 12
+      "versionCode": 13
     },
     "web": {
       "favicon": "./assets/favicon.png"

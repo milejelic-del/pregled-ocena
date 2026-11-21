@@ -45,7 +45,8 @@ export default function LoginScreen(p: Props) {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={s.wrap} keyboardShouldPersistTaps="handled">
         <Text style={s.logo}>📘</Text>
-        <Text style={s.title}>Pregled ocena</Text>
+        <Text style={s.title}>Petica</Text>
+        <Text style={s.by}>by Mile Jelić</Text>
         <Text style={s.subtitle}>za moj.esdnevnik.rs</Text>
 
         <View style={card}>
@@ -138,6 +139,7 @@ const makeStyles = (C: Palette) =>
   wrap: { padding: 18, paddingTop: 40 },
   logo: { fontSize: 44, textAlign: 'center' },
   title: { fontSize: 26, fontWeight: '700', textAlign: 'center', color: C.text, marginTop: 6 },
+  by: { textAlign: 'center', color: C.muted, fontStyle: 'italic', fontSize: 13, marginBottom: 2 },
   subtitle: { textAlign: 'center', color: C.muted, marginBottom: 8 },
   h2: { fontSize: 20, fontWeight: '700', color: C.text, marginBottom: 6 },
   muted: { color: C.muted, fontSize: 14 },

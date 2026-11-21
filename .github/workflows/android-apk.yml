@@ -35,6 +35,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Pregled ocena (najnovija verzija)
+          name: Petica (najnovija verzija)
           files: pregled-ocena.apk
           make_latest: true

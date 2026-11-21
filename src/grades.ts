@@ -269,6 +269,6 @@ export function shareText(student: string, className: string, subjects: Subject[
     lines.push(`${s.name}: ${s.numeric ? f(s.average) : ''}${s.numeric ? ' (' : ''}${vals.join(', ')}${s.numeric ? ')' : ''}${fin}`);
   }
   if (o.atRisk.length) lines.push('', `⚠️ Pažnja: ${o.atRisk.join(', ')}`);
-  lines.push('', 'Poslato iz aplikacije Pregled ocena');
+  lines.push('', 'Poslato iz aplikacije Petica');
   return lines.join('\n');
 }

@@ -125,7 +125,7 @@ if (native) {
 export async function enableNotifications(): Promise<{ ok: boolean; message: string }> {
   if (!native) return { ok: false, message: 'Obaveštenja rade samo na telefonu.' };
   const perm = await Notifications.requestPermissionsAsync();
-  if (!perm.granted) return { ok: false, message: 'Obaveštenja nisu dozvoljena. Uključite ih u podešavanjima telefona za „Pregled ocena“.' };
+  if (!perm.granted) return { ok: false, message: 'Obaveštenja nisu dozvoljena. Uključite ih u podešavanjima telefona za „Petica“.' };
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(CHANNEL, {
       name: 'Nove ocene',
