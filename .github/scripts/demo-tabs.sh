@@ -22,6 +22,10 @@ t=[html.unescape(s) for s in re.findall(r' text=\"([^\"]+)\"',x)]
 print(' | '.join(t)[:900])"; }
 tap() {
   dump; local c; c=$(center "$1")
+  for k in 1 2 3; do
+    [ -n "$c" ] && break
+    adb shell input swipe 500 1600 500 800 300; sleep 1; dump; c=$(center "$1")
+  done
   if [ -z "$c" ]; then echo "NEMA: $1"; texts; return 1; fi
   local t0=$(date +%s%N); adb shell input tap $c
   for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; dump; if grep -q "$2" u.xml; then echo "OK $1 -> '$2' za $(( ($(date +%s%N)-t0)/1000000 )) ms"; return 0; fi; done
@@ -30,7 +34,6 @@ tap() {
 sleep 5
 dump; texts
 tap "Pogledaj probni prikaz" "RASPODELA OCENA"
-for i in 1 2 3; do adb shell input swipe 500 1500 500 700 300; done
 tap "Provere" "NAREDNIH MESEC DANA"
 tap "Izostanci" "Енглески"
 tap "Vladanje" "Примерно"
