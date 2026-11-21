@@ -43,6 +43,88 @@ function dayLabel(iso: string, now = new Date()): { main: string; sub: string; s
   return { main, sub, soon: diff <= 2 };
 }
 
+const WD = ['P', 'U', 'S', 'Č', 'P', 'S', 'N'];
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'avg', 'sep', 'okt', 'nov', 'dec'];
+const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Kalendar narednih 30 dana: nedelje u redovima, tačkice za provere. */
+function MonthStrip({ events }: { events: CalEvent[] }) {
+  const C = useTheme();
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const last = new Date(today.getTime() + 30 * 86400000);
+  const start = new Date(today);
+  start.setDate(today.getDate() - ((today.getDay() + 6) % 7)); // ponedeljak ove nedelje
+  const byDay = new Map<string, CalEvent[]>();
+  for (const e of events) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
+  const inRange = events.filter((e) => e.date >= isoOf(today) && e.date <= isoOf(last));
+  const weeks: Date[][] = [];
+  for (let d = new Date(start); d <= last; ) {
+    const w: Date[] = [];
+    for (let i = 0; i < 7; i++) {
+      w.push(new Date(d));
+      d.setDate(d.getDate() + 1);
+    }
+    weeks.push(w);
+  }
+  // nedelja sa najviše provera
+  const perWeek = weeks.map((w) => w.reduce((n, d) => n + (d >= today && d <= last ? byDay.get(isoOf(d))?.length ?? 0 : 0), 0));
+  const busiest = perWeek.indexOf(Math.max(...perWeek));
+  const subject = (t: string) => (t.split(/\s[-–—:]\s/).pop() ?? t).slice(0, 3);
+  return (
+    <View>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 8 }}>
+        <Text style={{ color: C.text, fontSize: 26, fontWeight: '800' }}>{inRange.length}</Text>
+        <Text style={{ color: C.muted, fontSize: 13 }}>
+          {inRange.length % 10 === 1 && inRange.length % 100 !== 11 ? 'provera' : inRange.length % 10 >= 2 && inRange.length % 10 <= 4 && (inRange.length % 100 < 12 || inRange.length % 100 > 14) ? 'provere' : 'provera'} u narednih 30 dana
+          {inRange.length && perWeek[busiest] > 1
+            ? ` · najviše u nedelji od ${weeks[busiest][0].getDate()}. ${MONTHS[weeks[busiest][0].getMonth()]} (${perWeek[busiest]})`
+            : ''}
+        </Text>
+      </View>
+      <View style={{ flexDirection: 'row', marginTop: 10 }}>
+        {WD.map((d, i) => (
+          <Text key={i} style={{ flex: 1, textAlign: 'center', color: i >= 5 ? C.muted : C.muted, fontSize: 11, fontWeight: '700' }}>
+            {d}
+          </Text>
+        ))}
+      </View>
+      {weeks.map((w, wi) => (
+        <View key={wi} style={{ flexDirection: 'row', marginTop: 4, borderRadius: 10, backgroundColor: wi === busiest && perWeek[busiest] > 1 ? C.warnBg : 'transparent' }}>
+          {w.map((d, di) => {
+            const iso = isoOf(d);
+            const active = d >= today && d <= last;
+            const evs = active ? byDay.get(iso) ?? [] : [];
+            const isToday = iso === isoOf(today);
+            const weekend = di >= 5;
+            return (
+              <View key={di} style={{ flex: 1, alignItems: 'center', paddingVertical: 4, opacity: active ? (weekend ? 0.55 : 1) : 0.25 }}>
+                <View
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: 15,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: evs.length ? (evs[0].color || C.primary) : isToday ? C.pillBg : 'transparent',
+                    borderWidth: isToday ? 2 : 0,
+                    borderColor: C.primary,
+                  }}
+                >
+                  <Text style={{ color: evs.length ? '#ffffff' : C.text, fontWeight: evs.length || isToday ? '800' : '500', fontSize: 13 }}>{d.getDate()}</Text>
+                </View>
+                <Text style={{ color: C.muted, fontSize: 9, height: 12, marginTop: 1 }} numberOfLines={1}>
+                  {evs.length > 1 ? `${evs.length} prov.` : evs.length ? subject(evs[0].title) : d.getDate() === 1 ? MONTHS[d.getMonth()] : ''}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function TestsView({ state }: { state: SectionState }) {
   const C = useTheme();
   const card = cardStyle(C);
@@ -56,6 +138,10 @@ function TestsView({ state }: { state: SectionState }) {
   const blocks = (state.blocks ?? []).filter((b) => b.lines.length);
   return (
     <View>
+      <View style={card}>
+        <Text style={{ color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 0.4 }}>📅 NAREDNIH MESEC DANA</Text>
+        <MonthStrip events={list} />
+      </View>
       <View style={card}>
         <Text style={{ color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 0.4 }}>📝 NAJAVLJENE PROVERE</Text>
         {byDate.size === 0 ? (
