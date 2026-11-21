@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Probni prikaz na emulatoru: dodiruje kartice i proverava da li se ekran promeni.
 set -u
+read W H < <(adb shell wm size | grep -o '[0-9]*x[0-9]*' | tail -1 | tr 'x' ' ')
+echo "ekran ${W}x${H}"
+swipe() { adb shell input swipe $((W/2)) $((H*3/4)) $((W/2)) $((H/4)) 400; }
 dump() { adb shell uiautomator dump /sdcard/u.xml >/dev/null 2>&1; adb shell cat /sdcard/u.xml > u.xml 2>/dev/null; }
 center() { python3 - "$1" <<'PY'
 import re,sys
@@ -24,7 +27,7 @@ tap() {
   dump; local c; c=$(center "$1")
   for k in 1 2 3; do
     [ -n "$c" ] && break
-    adb shell input swipe 500 1600 500 800 300; sleep 1; dump; c=$(center "$1")
+    swipe; sleep 1; dump; c=$(center "$1")
   done
   if [ -z "$c" ]; then echo "NEMA: $1"; texts; return 1; fi
   local t0=$(date +%s%N); adb shell input tap $c
@@ -47,7 +50,8 @@ b=re.findall(r'class=\"android.widget.EditText\"[^>]*bounds=\"\[(\d+),(\d+)\]\[(
 a=list(map(int,b[0])) if b else [0,0,0,0]; print((a[0]+a[2])//2,(a[1]+a[3])//2)")
 adb shell input tap $e; sleep 2; dump
 grep -o 'class="android.widget.EditText"[^>]*focused="[a-z]*"' u.xml | grep -o 'focused="[a-z]*"' | head -2
-echo "=== SKROL ==="; adb shell input swipe 540 1800 540 600 800; sleep 2; dump; texts
+adb shell input keyevent 111; sleep 1
+echo "=== SKROL ==="; swipe; sleep 2; dump; texts
 tap "Pogledaj probni prikaz" "RASPODELA OCENA"
 tap "Provere" "NAREDNIH MESEC DANA"
 tap "Izostanci" "Енглески"
