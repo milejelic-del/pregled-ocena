@@ -15,7 +15,7 @@ function tone(text: string, C: Palette): string | null {
   const t = text.toLowerCase();
   if (/неоправдан|neopravdan/.test(t)) return C.dark ? '#f87171' : '#c62828';
   if (/нерегулис|neregulis|на чекању|na čekanju|чека|čeka/.test(t)) return C.dark ? '#fbbf24' : '#b26a00';
-  if (/оправдан|opravdan|примерно|primerno/.test(t)) return C.dark ? '#4ade80' : '#1e8e3e';
+  if (/оправдан|opravdan|примерно|primerno|похвал|pohval|награ|nagrad/.test(t)) return C.dark ? '#4ade80' : '#1e8e3e';
   if (/укор|ukor|опомен|opomen|мера|mera|незадовољ|nezadovolj/.test(t)) return C.dark ? '#f87171' : '#c62828';
   return null;
 }

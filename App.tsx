@@ -39,7 +39,11 @@ const DEMO_SECTIONS: Record<'absents' | 'behavior', PageBlock[]> = {
       ],
     },
   ],
-  behavior: [{ title: 'Владање', summary: [], lines: ['Прво полугодиште · примерно (5)', 'Друго полугодиште · -'] }],
+  behavior: [
+    { title: 'Оцене из владања', summary: [], lines: ['04. 11. 2025. · Примерно (5)'] },
+    { title: 'Похвале и мере', summary: [], lines: ['15. 10. 2025. · Похвала одељенског старешине'] },
+    { title: 'Владање на часу', summary: [], lines: [] },
+  ],
 };
 import { DARK, LIGHT, ThemeChoice, ThemeContext } from './src/theme';
 
