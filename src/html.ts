@@ -287,7 +287,7 @@ function segments(html: string): string[] {
     .replace(/<(script|style|svg)[\s\S]*?<\/\1>/g, ' ')
     .split(/<[^>]+>/)
     .map((t) => decodeEntities(t).replace(/\s+/g, ' ').replace(/^[•·\s\u00a0]+/, '').trim())
-    .filter((t) => t && t !== '-' && !/^[\w-]*\s*(?:[\w-]+\s*)*"\s*\/?>$/.test(t) && !/="[^"]*"/.test(t));
+    .filter((t) => t && t !== '-' && !/^[\w\s-]*"\s*\/?>$/.test(t) && !/="[^"]*"/.test(t));
 }
 
 const DATE_ONLY = /^\d{1,2}\.\s*\d{1,2}\.\s*\d{4}\.?$/;

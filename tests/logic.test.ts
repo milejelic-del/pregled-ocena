@@ -156,3 +156,13 @@ test('html portal: upcoming tests from the home calendar', async () => {
   const old = st[0].classes.find((k) => k.yearLabel === '24/25')!;
   assert.equal((await c.getUpcoming(old)).events.length, 1);
 });
+
+test('page parsing stays fast on long Latin text (no regex freeze)', async () => {
+  const { parsePageBlocks } = await import('../src/html');
+  const line = 'Kontrolni zadatak iz matematike za sledecu nedelju obavezno ponoviti gradivo';
+  const html = `<html><body><main class="main-content container"><div class="es-card"><h3>Najave</h3>${Array.from({ length: 50 }, () => `<p>${line}</p>`).join('')}</div></main></body></html>`;
+  const t = Date.now();
+  const r = parsePageBlocks(html);
+  assert.ok(Date.now() - t < 500, `parsiranje je trajalo ${Date.now() - t} ms`);
+  assert.equal(r[0].lines[0], line);
+});
