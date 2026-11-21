@@ -2,7 +2,7 @@ import { ActivityIndicator, Text, View } from 'react-native';
 import { CalEvent, isTest, PageBlock } from './html';
 import { cardStyle, Palette, useTheme } from './theme';
 
-export type SectionKey = 'grades' | 'absents' | 'behavior' | 'tests';
+export type SectionKey = 'grades' | 'absents' | 'behavior' | 'tests' | 'schedule';
 export interface SectionState {
   loading: boolean;
   blocks: PageBlock[] | null;

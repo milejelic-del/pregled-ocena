@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Share, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Modal, Pressable, ScrollView, Share, Text, useColorScheme, View } from 'react-native';
+import RasporedView from './src/raspored/RasporedView';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import demoData from './src/demoData.json';
 import { overview, parseGrades, shareText, Subject } from './src/grades';
@@ -82,6 +83,19 @@ export default function App() {
     setOfflineNote(`📴 Bez interneta. Prikazani su podaci sačuvani ${d ? offline.savedLabel(d.savedAt) : 'ranije'}.`);
   }, []);
   const [section, setSection] = useState<SectionKey>('grades');
+  const prevSection = useRef<SectionKey>('grades');
+  const openSection = (s: SectionKey) => {
+    if (s === 'schedule') prevSection.current = section;
+    setSection(s);
+  };
+  useEffect(() => {
+    if (section !== 'schedule') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setSection(prevSection.current);
+      return true;
+    });
+    return () => sub.remove();
+  }, [section]);
   const [sectionState, setSectionState] = useState<SectionState>({ loading: false, blocks: null, error: null });
   const sectionCache = useRef(new Map<string, PageBlock[]>());
   const testsCache = useRef(new Map<string, { events: CalEvent[]; blocks: PageBlock[] }>());
@@ -338,7 +352,7 @@ export default function App() {
   // Izostanci / vladanje: učitavaju se kad se otvori kartica, pa se pamte po razredu
   const loadSection = useCallback(
     async (kind: SectionKey, cls: StudentClass | null, force = false) => {
-      if (kind === 'grades' || !cls) return;
+      if (kind === 'grades' || kind === 'schedule' || !cls) return;
       if (kind === 'tests') {
         const key = `tests|${cls.portalKey ?? cls.studentClassId}`;
         const cached = testsCache.current.get(key);
@@ -428,6 +442,16 @@ export default function App() {
             <ActivityIndicator size="large" color={C.primary} />
             <Text style={{ color: C.muted, marginTop: 10 }}>Učitavanje…</Text>
           </View>
+        ) : mode === 'grades' && section === 'schedule' ? (
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.bg, gap: 10 }}>
+              <Pressable onPress={() => setSection(prevSection.current)} style={{ borderWidth: 1, borderColor: C.line, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: C.card }}>
+                <Text style={{ color: C.text, fontSize: 13 }}>← Nazad</Text>
+              </Pressable>
+              <Text style={{ color: C.text, fontSize: 17, fontWeight: '700', flex: 1 }}>📅 Raspored časova</Text>
+            </View>
+            <RasporedView />
+          </View>
         ) : mode === 'grades' && student && selected && view ? (
           <GradesScreen
             students={students}
@@ -449,7 +473,7 @@ export default function App() {
             error={error}
             notice={offlineNote}
             section={section}
-            onSection={setSection}
+            onSection={openSection}
             sectionState={sectionState}
             onShare={share}
             onBackToCurrent={() => selectClass(currentClass(student)!)}

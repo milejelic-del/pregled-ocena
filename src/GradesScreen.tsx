@@ -331,6 +331,7 @@ export default function GradesScreen(p: Props) {
             ['tests', '📝', 'Provere'],
             ['absents', '🕒', 'Izostanci'],
             ['behavior', '🏅', 'Vladanje'],
+            ['schedule', '📅', 'Raspored'],
           ] as const
         ).map(([k, icon, label]) => (
           <Pressable key={k} onPress={() => p.onSection(k)} style={[st.segBtn, p.section === k && st.segBtnActive]} accessibilityRole="tab" accessibilityLabel={label}>
@@ -342,7 +343,7 @@ export default function GradesScreen(p: Props) {
         ))}
       </View>
 
-      {p.section !== 'grades' ? (
+      {p.section !== 'grades' && p.section !== 'schedule' ? (
         <SectionView kind={p.section} state={p.sectionState} />
       ) : !p.subjects.length ? (
         <View style={card}>
