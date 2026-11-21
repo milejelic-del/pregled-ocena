@@ -14,6 +14,7 @@ jobs:
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - uses: actions/checkout@v4
       - name: Preuzmi APK
         run: curl -fsSL -o app.apk https://github.com/${{ github.repository }}/releases/download/latest/pregled-ocena.apk
       - name: Pokreni na emulatoru
@@ -33,6 +34,8 @@ jobs:
             adb logcat -d -s ReactNativeJS:V ReactNative:V > js.txt || true
             adb logcat -d '*:E' > errors.txt || true
             adb exec-out screencap -p > ekran.png || true
+            bash .github/scripts/demo-tabs.sh || true
+            adb logcat -d -s ReactNativeJS:V ReactNative:V | tail -40 || true
             echo "=== CRASH ==="; head -80 crash.txt
             echo "=== JS ==="; head -60 js.txt
       - uses: actions/upload-artifact@v4
