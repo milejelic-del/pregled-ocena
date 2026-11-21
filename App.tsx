@@ -125,6 +125,27 @@ export default function App() {
     setError(msg);
   }, []);
 
+  // Provere: jedno učitavanje po razredu u isto vreme; pokreće se odmah posle ocena, da kartica bude spremna
+  const testsInflight = useRef(new Map<string, Promise<{ events: CalEvent[]; blocks: PageBlock[] }>>());
+  const fetchTests = useCallback((cls: StudentClass, force = false) => {
+    const key = `tests|${cls.portalKey ?? cls.studentClassId}`;
+    const running = testsInflight.current.get(key);
+    if (running) return running;
+    const cached = testsCache.current.get(key);
+    if (cached && !force) return Promise.resolve(cached);
+    const pr = (async () => {
+      if (!client.current.loggedIn) {
+        const saved = await storage.loadCredentials();
+        if (saved) await client.current.login(saved.username, saved.password);
+      }
+      const r = await client.current.getUpcoming(cls);
+      testsCache.current.set(key, r);
+      return r;
+    })().finally(() => testsInflight.current.delete(key));
+    testsInflight.current.set(key, pr);
+    return pr;
+  }, []);
+
   const loadGrades = useCallback(
     async (cls: StudentClass, isDemo = demo, owner?: Student | null) => {
       const raw = isDemo ? demoData.grades : await client.current.getGrades(cls);
@@ -133,8 +154,9 @@ export default function App() {
       setSubjects(parsed);
       setError(null);
       if (!isDemo && owner) bg.rememberSeen(owner, cls, parsed);
+      if (!isDemo) fetchTests(cls).catch(() => 0);
     },
-    [demo],
+    [demo, fetchTests],
   );
 
   const loadAll = useCallback(
@@ -269,11 +291,7 @@ export default function App() {
         if (cached && !force) return setSectionState({ loading: false, blocks: cached.blocks, events: cached.events, error: null });
         setSectionState({ loading: true, blocks: null, error: null });
         try {
-          if (!demo && !client.current.loggedIn) {
-            const saved = await storage.loadCredentials();
-            if (saved) await client.current.login(saved.username, saved.password);
-          }
-          const r = demo ? demoTests() : await client.current.getUpcoming(cls);
+          const r = demo ? demoTests() : await fetchTests(cls, force);
           testsCache.current.set(key, r);
           setSectionState({ loading: false, blocks: r.blocks, events: r.events, error: null });
         } catch (e) {
@@ -300,7 +318,7 @@ export default function App() {
         setSectionState({ loading: false, blocks: null, error: e instanceof PortalError ? e.message : 'Učitavanje nije uspelo. Povucite nadole za ponovni pokušaj.' });
       }
     },
-    [demo],
+    [demo, fetchTests],
   );
   useEffect(() => {
     loadSection(section, selected);

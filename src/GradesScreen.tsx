@@ -205,7 +205,6 @@ export default function GradesScreen(p: Props) {
   const C = useTheme();
   const st = useMemo(() => makeStyles(C), [C]);
   const card = st.card;
-  const [showOlder, setShowOlder] = useState(false);
   const [sort, setSort] = useState<'order' | 'best' | 'worst' | 'latest'>('order');
   const { summary } = p;
   const sorted = useMemo(() => {
@@ -298,7 +297,7 @@ export default function GradesScreen(p: Props) {
         </View>
       ) : null}
 
-      {p.currentYear.length > 1 || p.otherYears.length ? (
+      {p.currentYear.length > 1 ? (
         <View style={st.tabs}>
           {p.currentYear.map((c) => {
             const active = c.studentClassId === p.selected.studentClassId;
@@ -310,32 +309,8 @@ export default function GradesScreen(p: Props) {
               </Pressable>
             );
           })}
-          {p.otherYears.length ? (
-            <Pressable onPress={() => setShowOlder(!showOlder)} style={st.tab}>
-              <Text style={st.tabText}>Ranije godine {showOlder ? '▴' : '▾'}</Text>
-            </Pressable>
-          ) : null}
         </View>
       ) : null}
-      {showOlder ? (
-        <View style={card}>
-          {p.otherYears.map((c) => (
-            <Pressable
-              key={c.studentClassId}
-              onPress={() => {
-                setShowOlder(false);
-                p.onSelectClass(c);
-              }}
-              style={st.olderRow}
-            >
-              <Text style={st.olderText}>
-                {c.yearLabel} · {c.section} · {c.schoolName}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-
       {p.error ? (
         <View style={[card, { backgroundColor: C.dangerBg }]}>
           <Text style={{ color: C.danger, fontWeight: '600' }}>{p.error}</Text>

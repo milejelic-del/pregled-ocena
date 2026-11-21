@@ -270,17 +270,22 @@ export class PortalClient {
   /** Najave provera: kalendar sa početne strane i stranica rasporeda provera. */
   async getUpcoming(cls: StudentClass): Promise<{ events: CalEvent[]; blocks: PageBlock[] }> {
     if (this.mode === 'api') throw new PortalError('Ova stranica nije dostupna na ovom portalu.');
-    await this.openGradesFor(cls);
-    const home = await this.getHtml('/');
+    // ako je razred već aktivan na portalu, ne otvaramo ponovo stranicu ocena
+    if (cls.portalKey && cls.portalKey !== this.serverActive) await this.openGradesFor(cls);
+    // početna strana (kalendar) i raspored provera se učitavaju istovremeno
+    const [home, sched] = await Promise.all([
+      this.getHtml('/'),
+      this.getHtml('/task-schedules').catch((e) => {
+        if (e instanceof LoginError) throw e;
+        return null;
+      }),
+    ]);
     this.learnMenu(home.html);
     const events = parseCalendarEvents(home.html);
     let blocks: PageBlock[] = [];
-    try {
-      const page = await this.getHtml('/task-schedules');
-      this.learnMenu(page.html);
-      blocks = parsePageBlocks(page.html);
-    } catch (e) {
-      if (e instanceof LoginError) throw e;
+    if (sched) {
+      this.learnMenu(sched.html);
+      blocks = parsePageBlocks(sched.html);
     }
     return { events, blocks };
   }
