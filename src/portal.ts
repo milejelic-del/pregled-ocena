@@ -98,6 +98,8 @@ export class PortalClient {
   private switchHrefs = new Map<string, string>();
   /** zapis pokušaja prebacivanja (za dijagnostiku, bez ličnih podataka) */
   switchLog: string[] = [];
+  /** da li oznaka „active“ u meniju portala zaista prati prebacivanje (proverava se po sadržaju) */
+  private menuTrusted = true;
   private learnMenu(html: string) {
     const rows = parseStudentsMenu(html, this.baseUrl);
     for (const r of rows) {
@@ -105,7 +107,7 @@ export class PortalClient {
       const q = r.switchHref.match(/[?&]student=(\d+)/);
       if (q) this.knownIds.set(key, q[1]);
       if (!r.active) this.switchHrefs.set(key, r.switchHref);
-      if (r.active) this.serverActive = key;
+      if (r.active && this.menuTrusted) this.serverActive = key;
     }
     return rows.length;
   }
@@ -201,9 +203,9 @@ export class PortalClient {
     }
   }
 
-  private async getHtml(pathOrUrl: string): Promise<{ html: string; url: string }> {
+  private async getHtml(pathOrUrl: string, headers?: Record<string, string>): Promise<{ html: string; url: string }> {
     if (!this.loggedIn) throw new LoginError('Niste prijavljeni.');
-    const resp = await this.req(pathOrUrl.startsWith('http') ? pathOrUrl.slice(this.baseUrl.length) : pathOrUrl);
+    const resp = await this.req(pathOrUrl.startsWith('http') ? pathOrUrl.slice(this.baseUrl.length) : pathOrUrl, headers ? { headers } : {});
     if (isLoginUrl(resp.url)) {
       this.loggedIn = false;
       throw new LoginError('Sesija na portalu je istekla. Prijavite se ponovo.');
@@ -388,18 +390,34 @@ export class PortalClient {
     }
     const id = this.knownIds.get(key);
     const href = this.switchHrefs.get(key);
+    // trenutni sadržaj stranice ocena: prelazak je uspeo i ako se sadržaj promeni (spisak predmeta je vezan za razred)
+    const before = await grades();
+    if (this.serverActive === key && this.menuTrusted) return before.page;
+    const subjSig = (html: string) => parseSubjectLinks(html).map((x) => x.id).join(',');
+    const sig0 = subjSig(before.page.html);
+    const firstSubj = parseSubjectLinks(before.page.html)[0]?.id;
     const tries = [
       ...(href ? [href.startsWith(this.baseUrl) ? href.slice(this.baseUrl.length) || '/' : href] : []),
       ...(id ? [`/?student=${id}`, `/grades?student=${id}`] : []),
-    ].filter((v, i, arr) => arr.indexOf(v) === i);
+      ...(id && firstSubj ? [`/grades/${firstSubj}/show?student=${id}`] : []),
+    ]
+      .map((v) => (v.startsWith('/') ? v : `/${v}`))
+      .filter((v, i, arr) => arr.indexOf(v) === i);
     if (!tries.length) throw new PortalError('Ne mogu da prebacim na ovu školu. Osvežite (povucite nadole) pa pokušajte ponovo.');
+    const activeIdx = (html: string) => parseStudentsMenu(html, this.baseUrl).findIndex((r) => r.active);
     for (const path of tries) {
-      const sw = await this.getHtml(path.startsWith('http') || path.startsWith('/') ? path : `/${path}`);
+      const sw = await this.getHtml(path, { Referer: `${this.baseUrl}/` });
       const swRows = this.learnMenu(sw.html);
       const g = await grades();
-      const ok = this.serverActive === key || (!g.rows && !swRows);
-      this.switchLog.push(`${maskPath(path)} -> meni ${swRows}/${g.rows}, prebačeno ${ok ? 'da' : 'ne'}`);
+      const sig = subjSig(g.page.html);
+      const byMenu = this.serverActive === key;
+      const byContent = !!sig && sig !== sig0;
+      const ok = byMenu || byContent || (!g.rows && !swRows);
+      this.switchLog.push(
+        `${maskPath(path)} -> ${maskPath(sw.url) || '/'}, aktivan red ${activeIdx(sw.html)}/${activeIdx(g.page.html)}, sadržaj ${byContent ? 'promenjen' : 'isti'}, prebačeno ${ok ? 'da' : 'ne'}`,
+      );
       if (ok) {
+        if (!byMenu && byContent) this.menuTrusted = false;
         this.serverActive = key;
         return g.page;
       }
@@ -411,7 +429,7 @@ export class PortalClient {
 
   /** Izveštaj o strukturi stranica — bez imena, ocena i drugih ličnih podataka. */
   async diagnose(): Promise<string> {
-    const lines: string[] = [`verzija: 7`];
+    const lines: string[] = [`verzija: 8`];
     const check = async (path: string, json: boolean) => {
       const t0 = Date.now();
       try {
@@ -452,6 +470,27 @@ export class PortalClient {
             lines.push(`dete ${i + 1}, škola ${j + 1}: NIJE PREBAČENO; ${this.switchLog.join('; ')}; ${(e as Error).message?.slice(0, 60)}`);
           }
         }
+      }
+      // kako stranica portala prebacuje dete (deo skripte oko reči „student“, bez ličnih podataka)
+      try {
+        const src = homeHtml.match(/<script[^>]*src="([^"]*app\.js[^"]*)"/)?.[1];
+        if (src) {
+          const js = await (await this.req(src.startsWith('http') ? src.slice(this.baseUrl.length) : src)).text();
+          const snips: string[] = [];
+          const re = /student|switch-?class|school-class/gi;
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(js)) && snips.length < 14) {
+            const sn = js.slice(Math.max(0, m.index - 60), m.index + 80).replace(/\s+/g, ' ').replace(/\d+/g, 'N');
+            if (!snips.some((x) => x.includes(sn.slice(40, 100)))) snips.push(sn);
+            re.lastIndex = m.index + 80;
+          }
+          lines.push(`app.js (${js.length} B), mesta sa „student“: ${snips.length}`);
+          for (const sn of snips) lines.push(`  » ${sn}`);
+        }
+        const wrap = homeHtml.match(/<a[^>]*student-school-class-wrap[^>]*>/g)?.slice(0, 2) ?? [];
+        for (const w of wrap) lines.push(`  oznaka upisa: ${w.replace(/\d+/g, 'N').replace(/>[^<]*</g, '><').slice(0, 200)}`);
+      } catch (e) {
+        lines.push(`app.js: greška ${(e as Error).message?.slice(0, 60)}`);
       }
       lines.push('--- KRAJ PREBACIVANJA ---');
     } catch (e) {
