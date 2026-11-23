@@ -31,7 +31,10 @@ export const DEFAULT_BASE_URL = 'https://moj.esdnevnik.rs';
 export class PortalError extends Error {}
 export class LoginError extends PortalError {}
 /** Nema veze sa portalom (internet). */
-export class NetworkError extends PortalError {}
+export class NetworkError extends PortalError {
+  /** tehnički razlog (za dijagnostiku) */
+  detail = '';
+}
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -121,8 +124,10 @@ export class PortalClient {
         ...(ctrl ? { signal: ctrl.signal } : {}),
         headers: { ...HEADERS, ...(init.headers as Record<string, string>) },
       });
-    } catch {
-      throw new NetworkError('Portal moj.esdnevnik.rs nije dostupan. Proverite internet vezu.');
+    } catch (e) {
+      const err = new NetworkError('Portal moj.esdnevnik.rs nije dostupan. Proverite internet vezu.');
+      err.detail = ctrl?.signal.aborted ? 'nema odgovora 25 s' : String((e as Error)?.message ?? e).slice(0, 80);
+      throw err;
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -408,13 +413,14 @@ export class PortalClient {
   async diagnose(): Promise<string> {
     const lines: string[] = [`verzija: 6`];
     const check = async (path: string, json: boolean) => {
+      const t0 = Date.now();
       try {
         const r = await this.req(path, json ? { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } } : {});
         const body = await r.text();
         lines.push(`${maskPath(path)} -> ${r.status} ${maskPath(r.url ?? '')} (${body.length} B)`);
         return { body, url: r.url ?? '' };
-      } catch {
-        lines.push(`${maskPath(path)} -> greška mreže`);
+      } catch (e) {
+        lines.push(`${maskPath(path)} -> greška mreže (${e instanceof NetworkError ? e.detail : String(e).slice(0, 60)}, ${Date.now() - t0} ms)`);
         return null;
       }
     };

@@ -206,6 +206,8 @@ export default function App() {
       for (const owner of all) for (const c of currentClasses(owner)) {
         const k = offline.classKey(c);
         if (k === offline.classKey(except)) continue;
+        // kratka pauza između škola, da portal ne dobije previše zahteva odjednom
+        await new Promise((r) => setTimeout(r, 1500));
         try {
           if (force || !gradesMem.current.has(k)) {
             const parsed = parseGrades(await client.current.getGrades(c));
