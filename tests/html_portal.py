@@ -43,6 +43,11 @@ def menu(active, path=""):
     )
 
 
+def act():
+    """Kao pravi portal: ?student=N važi samo za taj zahtev, inače je aktivan podrazumevani razred."""
+    return request.args.get("student") or "7001"
+
+
 def guard():
     return None if session.get("auth") else redirect("/login")
 
@@ -83,7 +88,7 @@ def courses_for(active):
 
 
 def subject_page(idx):
-    courses = courses_for(session["active"])
+    courses = courses_for(act())
     c = courses[idx]
     dd = "".join(
         f'<a href="{BASE}/grades/{1000 + i}/show" class="dropdown-item">\n {h.escape(x["course"])}\n </a> '
@@ -105,7 +110,7 @@ def subject_page(idx):
             f' <div class="final-grade-field">{fin_html}</div></div> <div class="category-items-wrap">{items}</div></div>'
         )
     return (
-        '<html><script src="/js/app.js?id=abc"></script>' + menu(session["active"], "/grades") + '<div class="main-content container">'
+        '<html><script src="/js/app.js?id=abc"></script>' + menu(act(), "/grades") + '<div class="main-content container">'
         f'<div class="dropdown-menu"><a href="{BASE}/grades/0/show" class="dropdown-item">Сви предмети</a> {dd}</div>'
         f'<div class="sections-wrap"><article class="es-card mb-3"><h4 class="es__card__title mb-4">{h.escape(c["course"])}</h4>'
         f'<div class="section-wrap"><div class="categories-wrap">{cats}</div></div></article></div></div></html>'
@@ -131,7 +136,6 @@ def login_post():
         return "Page Expired", 419
     if request.form.get("username") == USER and request.form.get("password") == PASS:
         session["auth"] = True
-        session["active"] = "7001"
         return redirect("/")
     session["err"] = "Унети подаци нису тачни."
     return redirect("/login")
@@ -150,12 +154,12 @@ def home():
                 "url": f"{BASE}/task-schedules", "display": "block"}
     evs = [ev(-3, "Контролни задатак - Физика", "#e53935"), ev(1, "Писмени задатак - Математика", "#e53935"),
            ev(5, "Тест - Енглески језик", "#1e88e5"), ev(5, "Контролни задатак - Историја", "#e53935")]
-    if session.get("active") == "6001":
+    if act() == "6001":
         evs = evs[:1]
     events = h.escape(json.dumps(evs), quote=True)
     return (
         f'<html><body><top-notification-icon name="messages" url="{BASE}/messages" :notifications-count="0"></top-notification-icon>'
-        f"{menu(session['active'])}<mini-event-calendar :events='{events}'></mini-event-calendar></body></html>"
+        f"{menu(act())}<mini-event-calendar :events='{events}'></mini-event-calendar></body></html>"
     )
 
 
@@ -163,8 +167,6 @@ def home():
 def grades():
     if (g := guard()):
         return g
-    if request.args.get("student"):
-        session["active"] = request.args["student"]
     return subject_page(0)
 
 
@@ -178,7 +180,7 @@ def grades_show(cid):
 
 
 def page(inner, path):
-    return ('<html>' + menu(session["active"], path) + '<div class="main-content container"><div class="sections-wrap">'
+    return ('<html>' + menu(act(), path) + '<div class="main-content container"><div class="sections-wrap">'
             + inner + '</div></div><div class="modal fade"><div>Сакривено</div></div></html>')
 
 
@@ -186,7 +188,7 @@ def page(inner, path):
 def absents():
     if (g := guard()):
         return g
-    old = session["active"] == "6001"
+    old = act() == "6001"
     items = [("12. 11. 2025.", "Математика", "2. час", "оправдан"), ("12. 11. 2025.", "Физика", "3. час", "оправдан"),
              ("03. 12. 2025.", "Историја", "5. час", "неоправдан")]
     if old:
@@ -215,7 +217,7 @@ def behavior():
              '<div class="col"><span class="badge">Примерно (5)</span></div></div></div>'
              '<div class="tab-pane fade" id="measures-tab"></div><div class="tab-pane fade" id="class-tab"></div></div></article>')
     # bez sections-wrap, kao na pravom portalu
-    return '<html>' + menu(session["active"], "/behavior") + '<div class="main-content container">' + inner + '</div></html>'
+    return '<html>' + menu(act(), "/behavior") + '<div class="main-content container">' + inner + '</div></html>'
 
 
 @app.get("/task-schedules")

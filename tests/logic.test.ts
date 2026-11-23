@@ -197,8 +197,8 @@ test('same child on two portal cards (two schools) becomes one student', async (
   assert.deepEqual(currentClasses(st[0]).map((k) => k.schoolName).sort(), ['Музичка школа', 'ОШ']);
 });
 
-// Lažni portal sa dvoje dece; `switchVia` određuje koja adresa stvarno menja aktivno dete u sesiji.
-function twoKidsPortal(switchVia: 'home' | 'never') {
+// Lažni portal sa dvoje dece, kao pravi: ?student=N važi samo za taj zahtev (ili se zanemaruje, za proveru greške).
+function twoKidsPortal(switchVia: 'param' | 'never') {
   let active = '11';
   const card = (id: string, name: string, sch: string) =>
     `<div class="card student"><div class="card-header"><h5 data-bs-target="#student-${id}"><div class="student-no-avatar">X</div> ${name} </h5></div>` +
@@ -207,8 +207,7 @@ function twoKidsPortal(switchVia: 'home' | 'never') {
   const menu = () => `<div id="students-list">${card('11', 'Ана Петровић', 'ОШ А')}${card('22', 'Марко Петровић', 'ОШ Б')}</div>`;
   const fake = (async (url: string) => {
     const u = new URL(url);
-    const sw = u.searchParams.get('student');
-    if (sw && switchVia === 'home' && u.pathname === '/') active = sw;
+    active = (switchVia === 'param' && u.searchParams.get('student')) || '11';
     const body = u.pathname.startsWith('/grades')
       ? `<html>${menu()}<a class="dropdown-item" href="http://x/grades/${active}01/show">Predmet ${active}</a></html>`
       : `<html>${menu()}</html>`;
@@ -220,18 +219,22 @@ function twoKidsPortal(switchVia: 'home' | 'never') {
   return c;
 }
 
-test('switching to another child is verified (home link works)', async () => {
-  const c = twoKidsPortal('home');
+test('another child is read with ?student=N on every request', async () => {
+  const c = twoKidsPortal('param');
   const kids = await c.getStudents();
   assert.equal(kids.length, 2);
   const marko = currentClass(kids.find((k) => k.fullName.includes('Марко'))!)!;
   const g = (await c.getGrades(marko)) as { course: string }[];
   assert.equal(g[0].course, 'Predmet 22');
+  // i podrazumevano dete posle toga (bez ?student) i dalje daje svoje ocene
+  const ana = currentClass(kids.find((k) => k.fullName.includes('Ана'))!)!;
+  const g2 = (await c.getGrades(ana)) as { course: string }[];
+  assert.equal(g2[0].course, 'Predmet 11');
 });
 
 test('if the portal does not switch, an error is shown instead of the wrong child grades', async () => {
   const c = twoKidsPortal('never');
   const kids = await c.getStudents();
   const marko = currentClass(kids.find((k) => k.fullName.includes('Марко'))!)!;
-  await assert.rejects(c.getGrades(marko), /nije prebacio/);
+  await assert.rejects(c.getGrades(marko), /nije prikazao/);
 });
