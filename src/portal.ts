@@ -68,6 +68,28 @@ export class PortalClient {
   private knownIds = new Map<string, string>();
   /** razred koji je trenutno aktivan na portalu (sesija) */
   private serverActive: string | null = null;
+  /**
+   * Portal pamti aktivan razred u sesiji, pa se upiti za različite škole/razrede ne smeju preplitati.
+   * Upiti za isti razred idu paralelno; za drugi razred čekaju da se tekući završe.
+   */
+  private holder: string | null = null;
+  private holders = 0;
+  private waiters: (() => void)[] = [];
+  private async withClass<T>(cls: StudentClass, fn: () => Promise<T>): Promise<T> {
+    const key = cls.portalKey ?? String(cls.studentClassId);
+    while (this.holders > 0 && this.holder !== key) await new Promise<void>((r) => this.waiters.push(r));
+    this.holder = key;
+    this.holders++;
+    try {
+      return await fn();
+    } finally {
+      this.holders--;
+      if (!this.holders) {
+        this.holder = null;
+        this.waiters.splice(0).forEach((w) => w());
+      }
+    }
+  }
 
   private learnMenu(html: string) {
     const rows = parseStudentsMenu(html, this.baseUrl);
@@ -198,11 +220,14 @@ export class PortalClient {
     const rows = parseStudentsMenu(html, this.baseUrl);
     this.learnMenu(html);
     const byStudent = new Map<string, Student>();
+    // isto dete upisano u više škola (npr. osnovna i muzička) može imati više kartica na portalu -> jedan učenik
+    const sameKid = (n: string) => n.normalize('NFC').toLocaleLowerCase('sr').replace(/\s+/g, ' ').trim();
     rows.forEach((r, i) => {
-      let st = byStudent.get(r.studentId);
+      const k = r.studentName && r.studentName !== 'Učenik' ? `n:${sameKid(r.studentName)}` : `id:${r.studentId}`;
+      let st = byStudent.get(k);
       if (!st) {
         st = { id: Number(r.studentId) || byStudent.size + 1, fullName: r.studentName, classes: [] };
-        byStudent.set(r.studentId, st);
+        byStudent.set(k, st);
       }
       const q = r.switchHref.match(/[?&]student=(\d+)/);
       st.classes.push({
@@ -222,6 +247,10 @@ export class PortalClient {
 
   async getGrades(cls: StudentClass): Promise<unknown> {
     if (this.mode === 'api') return this.getJson(`/api/grades/${Math.trunc(cls.studentClassId)}`);
+    return this.withClass(cls, () => this.gradesHtml(cls));
+  }
+
+  private async gradesHtml(cls: StudentClass): Promise<unknown> {
     let page: { html: string; url: string } | null = null;
     try {
       page = await this.openGradesFor(cls);
@@ -269,6 +298,10 @@ export class PortalClient {
   /** Druge stranice portala (izostanci, vladanje) za izabrani razred, kao blokovi teksta. */
   async getSection(path: '/absents' | '/behavior', cls: StudentClass): Promise<PageBlock[]> {
     if (this.mode === 'api') throw new PortalError('Ova stranica nije dostupna na ovom portalu.');
+    return this.withClass(cls, () => this.sectionHtml(path, cls));
+  }
+
+  private async sectionHtml(path: string, cls: StudentClass): Promise<PageBlock[]> {
     // stranica ocena se otvara samo kad treba prebaciti razred (inače je to suvišan spor zahtev)
     if (cls.portalKey && cls.portalKey !== this.serverActive) await this.openGradesFor(cls);
     const page = await this.getHtml(path);
@@ -283,6 +316,10 @@ export class PortalClient {
   /** Najave provera: kalendar sa početne strane i stranica rasporeda provera. */
   async getUpcoming(cls: StudentClass): Promise<{ events: CalEvent[]; blocks: PageBlock[] }> {
     if (this.mode === 'api') throw new PortalError('Ova stranica nije dostupna na ovom portalu.');
+    return this.withClass(cls, () => this.upcomingHtml(cls));
+  }
+
+  private async upcomingHtml(cls: StudentClass): Promise<{ events: CalEvent[]; blocks: PageBlock[] }> {
     // ako je razred već aktivan na portalu, ne otvaramo ponovo stranicu ocena
     if (cls.portalKey && cls.portalKey !== this.serverActive) await this.openGradesFor(cls);
     // početna strana (kalendar) i raspored provera se učitavaju istovremeno
@@ -515,6 +552,13 @@ function yearKey(label: string): number {
   if (!m) return -1;
   const n = Number(m[0]);
   return n < 100 ? n + 2000 : n;
+}
+
+/** Svi upisi u tekućoj školskoj godini (npr. osnovna i muzička škola); prvi je glavni. */
+export function currentClasses(st: Student): StudentClass[] {
+  const cur = currentClass(st);
+  if (!cur) return [];
+  return st.classes.filter((c) => c.yearLabel === cur.yearLabel).sort((a, b) => (a === cur ? -1 : b === cur ? 1 : b.classId - a.classId));
 }
 
 /** Aktuelni razred: najnovija školska godina, pa najveći ID odeljenja. */

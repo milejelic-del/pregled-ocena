@@ -935,5 +935,206 @@
     }
    }
   }
+ ],
+ "gradesMusic": [
+  {
+   "course": "Клавир",
+   "classCourseId": 901,
+   "classCourseGradeTypeId": 1,
+   "sequence": 1,
+   "parts": {
+    "1": {
+     "grades": [
+      {
+       "descriptive": false,
+       "date": "2025-10-08",
+       "createTime": "2025-10-08 12:00:00",
+       "fullGrade": "одличан (5)",
+       "grade": 5,
+       "gradeCategory": "јавни час",
+       "note": "Јесењи концерт",
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      },
+      {
+       "descriptive": false,
+       "date": "2025-11-19",
+       "createTime": "2025-11-19 12:00:00",
+       "fullGrade": "одличан (5)",
+       "grade": 5,
+       "gradeCategory": "усмено одговарање",
+       "note": null,
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      },
+      {
+       "descriptive": false,
+       "date": "2025-12-17",
+       "createTime": "2025-12-17 12:00:00",
+       "fullGrade": "врло добар (4)",
+       "grade": 4,
+       "gradeCategory": "испит",
+       "note": "Полугодишњи испит",
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      }
+     ],
+     "average": 4.67,
+     "final": null
+    },
+    "2": {
+     "grades": [
+      {
+       "descriptive": false,
+       "date": "2026-02-11",
+       "createTime": "2026-02-11 12:00:00",
+       "fullGrade": "одличан (5)",
+       "grade": 5,
+       "gradeCategory": "усмено одговарање",
+       "note": null,
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      }
+     ],
+     "average": 5.0,
+     "final": null
+    }
+   }
+  },
+  {
+   "course": "Солфеђо",
+   "classCourseId": 902,
+   "classCourseGradeTypeId": 1,
+   "sequence": 2,
+   "parts": {
+    "1": {
+     "grades": [
+      {
+       "descriptive": false,
+       "date": "2025-10-01",
+       "createTime": "2025-10-01 12:00:00",
+       "fullGrade": "врло добар (4)",
+       "grade": 4,
+       "gradeCategory": "диктат",
+       "note": null,
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      },
+      {
+       "descriptive": false,
+       "date": "2025-11-12",
+       "createTime": "2025-11-12 12:00:00",
+       "fullGrade": "одличан (5)",
+       "grade": 5,
+       "gradeCategory": "певање из листа",
+       "note": null,
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      },
+      {
+       "descriptive": false,
+       "date": "2025-12-10",
+       "createTime": "2025-12-10 12:00:00",
+       "fullGrade": "врло добар (4)",
+       "grade": 4,
+       "gradeCategory": "диктат",
+       "note": null,
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      }
+     ],
+     "average": 4.33,
+     "final": null
+    },
+    "2": {
+     "grades": [
+      {
+       "descriptive": false,
+       "date": "2026-02-18",
+       "createTime": "2026-02-18 12:00:00",
+       "fullGrade": "одличан (5)",
+       "grade": 5,
+       "gradeCategory": "диктат",
+       "note": null,
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      }
+     ],
+     "average": 5.0,
+     "final": null
+    }
+   }
+  },
+  {
+   "course": "Теорија музике",
+   "classCourseId": 903,
+   "classCourseGradeTypeId": 1,
+   "sequence": 3,
+   "parts": {
+    "1": {
+     "grades": [
+      {
+       "descriptive": false,
+       "date": "2025-10-22",
+       "createTime": "2025-10-22 12:00:00",
+       "fullGrade": "одличан (5)",
+       "grade": 5,
+       "gradeCategory": "тест",
+       "note": null,
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      },
+      {
+       "descriptive": false,
+       "date": "2025-12-03",
+       "createTime": "2025-12-03 12:00:00",
+       "fullGrade": "одличан (5)",
+       "grade": 5,
+       "gradeCategory": "усмено одговарање",
+       "note": null,
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      }
+     ],
+     "average": 5.0,
+     "final": null
+    },
+    "2": {
+     "grades": [],
+     "average": null,
+     "final": null
+    }
+   }
+  },
+  {
+   "course": "Хор",
+   "classCourseId": 904,
+   "classCourseGradeTypeId": 1,
+   "sequence": 4,
+   "parts": {
+    "1": {
+     "grades": [
+      {
+       "descriptive": false,
+       "date": "2025-11-26",
+       "createTime": "2025-11-26 12:00:00",
+       "fullGrade": "одличан (5)",
+       "grade": 5,
+       "gradeCategory": "наступ",
+       "note": "Новогодишњи концерт",
+       "schoolyearPartId": null,
+       "evaluationElement": null
+      }
+     ],
+     "average": 5.0,
+     "final": null
+    },
+    "2": {
+     "grades": [],
+     "average": null,
+     "final": null
+    }
+   }
+  }
  ]
 }

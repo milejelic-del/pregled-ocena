@@ -14,6 +14,8 @@ interface Props {
   student: Student;
   selected: StudentClass;
   currentYear: StudentClass[];
+  /** prosek po školi (ključ razreda), ako su ocene te škole već učitane */
+  schoolAverages: Record<string, number | null>;
   otherYears: StudentClass[];
   isCurrent: boolean;
   subjects: Subject[];
@@ -300,13 +302,19 @@ export default function GradesScreen(p: Props) {
       ) : null}
 
       {p.currentYear.length > 1 ? (
-        <View style={st.tabs}>
+        <View style={st.schools}>
           {p.currentYear.map((c) => {
-            const active = c.studentClassId === p.selected.studentClassId;
+            const k = String(c.portalKey ?? c.studentClassId);
+            const active = k === String(p.selected.portalKey ?? p.selected.studentClassId);
+            const avg = p.schoolAverages[k];
             return (
-              <Pressable key={c.studentClassId} onPress={() => p.onSelectClass(c)} style={[st.tab, active && st.tabActive]}>
-                <Text style={[st.tabText, active && st.tabTextActive]} numberOfLines={1}>
-                  {c.schoolName} · {c.section}
+              <Pressable key={k} onPress={() => !active && p.onSelectClass(c)} style={[st.school, active && st.schoolActive]} accessibilityLabel={`Škola ${c.schoolName}`}>
+                <Text style={[st.schoolName, active && st.tabTextActive]} numberOfLines={2}>
+                  🏫 {c.schoolName}
+                </Text>
+                <Text style={[st.schoolSub, active && st.schoolSubActive]} numberOfLines={1}>
+                  {c.section}
+                  {avg != null ? ` · prosek ${fmtAvg(avg)}` : ''}
                 </Text>
               </Pressable>
             );
@@ -463,6 +471,12 @@ const makeStyles = (C: Palette) =>
   tiny: { color: C.muted, fontSize: 9, fontWeight: '700' },
   warnPill: { alignSelf: 'flex-start', backgroundColor: C.warnBg, color: C.warnText, fontSize: 12, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, marginTop: 4, overflow: 'hidden' },
   tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  schools: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  school: { flexGrow: 1, flexBasis: '45%', borderWidth: 1, borderColor: C.line, backgroundColor: C.card, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  schoolActive: { backgroundColor: C.primary, borderColor: C.primary },
+  schoolName: { color: C.text, fontSize: 13, fontWeight: '700' },
+  schoolSub: { color: C.muted, fontSize: 12, marginTop: 2 },
+  schoolSubActive: { color: C.onPrimary },
   tab: { borderWidth: 1, borderColor: C.line, backgroundColor: C.card, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, maxWidth: '100%' },
   tabActive: { backgroundColor: C.primary, borderColor: C.primary },
   tabText: { color: C.text, fontSize: 13 },

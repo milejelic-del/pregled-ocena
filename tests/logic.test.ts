@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import demo from '../src/demoData.json';
 import { overview, parseGrades } from '../src/grades';
-import { currentClass, FetchFn, LoginError, parseStudents, PortalClient } from '../src/portal';
+import { currentClass, currentClasses, FetchFn, LoginError, parseStudents, PortalClient } from '../src/portal';
 
 const BASE = process.env.MOCK_URL ?? 'http://127.0.0.1:5077';
 
@@ -165,4 +165,34 @@ test('page parsing stays fast on long Latin text (no regex freeze)', async () =>
   const r = parsePageBlocks(html);
   assert.ok(Date.now() - t < 500, `parsiranje je trajalo ${Date.now() - t} ms`);
   assert.equal(r[0].lines[0], line);
+});
+
+test('html portal: schools loaded at the same time do not mix data', async () => {
+  const c = new PortalClient(HTML_BASE, cookieFetch());
+  await c.login('roditelj.test', 'TajnaLozinka1!');
+  const st = (await c.getStudents())[0];
+  const cur = currentClass(st)!;
+  const old = st.classes.find((k) => k.yearLabel === '24/25')!;
+  assert.deepEqual(currentClasses(st).map((k) => k.section), ['VI 2', 'II клавир']);
+  const [a, b, a2] = await Promise.all([c.getGrades(cur), c.getGrades(old), c.getGrades(cur)]);
+  const mat = (x: unknown) => parseGrades(x).find((s) => s.name === 'Математика')!.allGrades[0].date;
+  assert.ok(mat(a).startsWith('2025'), 'tekuća godina');
+  assert.ok(mat(b).startsWith('2024'), 'ranija godina');
+  assert.equal(mat(a2), mat(a));
+});
+
+test('same child on two portal cards (two schools) becomes one student', async () => {
+  const card = (id: string, sch: string, sec: string, active: boolean) =>
+    `<div class="card student"><div class="card-header"><h5 data-bs-target="#student-${id}"><div class="student-no-avatar">АП</div> Ана  Петровић </h5></div>` +
+    `<a href="/?student=${id}0" class="student-school-class-wrap${active ? ' active' : ''}"><div class="student-school-class-item">${sch}</div>` +
+    `<div class="student-school-class-item">25/26 ${sec}</div></a></div>`;
+  const home = `<html><div id="students-list">${card('11', 'ОШ', 'VI 2', true)}${card('22', 'Музичка школа', 'II клавир', false)}</div></html>`;
+  const fake: FetchFn = (async (url: string) =>
+    url.endsWith('/api/students') ? new Response('nema', { status: 404 }) : new Response(home, { status: 200, headers: { 'content-type': 'text/html' } })) as unknown as FetchFn;
+  const c = new PortalClient('http://x', fake);
+  c.mode = 'html';
+  c.loggedIn = true;
+  const st = await c.getStudents();
+  assert.equal(st.length, 1);
+  assert.deepEqual(currentClasses(st[0]).map((k) => k.schoolName).sort(), ['Музичка школа', 'ОШ']);
 });

@@ -10,7 +10,7 @@ import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 import { parseGrades, Subject } from './grades';
 import { findNew, fingerprints, NewGrade, notificationText, summaryText } from './newGrades';
-import { currentClass, PortalClient, Student, StudentClass } from './portal';
+import { currentClasses, PortalClient, Student, StudentClass } from './portal';
 import * as offline from './offline';
 import * as storage from './storage';
 
@@ -55,8 +55,7 @@ if (native) {
 /** Ocene koje je roditelj već video u aplikaciji ne treba javljati. */
 export function rememberSeen(st: Student, cls: StudentClass, subjects: Subject[]) {
   if (!native) return;
-  const cur = currentClass(st);
-  if (!cur || keyOf(st, cur) !== keyOf(st, cls)) return;
+  if (!currentClasses(st).some((c) => keyOf(st, c) === keyOf(st, cls))) return;
   const snap = readSnapshot();
   snap.classes[keyOf(st, cls)] = [...fingerprints(subjects).keys()];
   writeSnapshot(snap);
@@ -68,8 +67,8 @@ export function lastCheck(): Date | null {
   return v ? new Date(v) : null;
 }
 
-async function notify(st: Student, list: NewGrade[]) {
-  const texts = list.length <= 3 ? list.map((g) => notificationText(st.fullName, g)) : [summaryText(st.fullName, list)];
+async function notify(who: string, list: NewGrade[]) {
+  const texts = list.length <= 3 ? list.map((g) => notificationText(who, g)) : [summaryText(who, list)];
   for (const t of texts) {
     await Notifications.scheduleNotificationAsync({
       content: { title: t.title, body: t.body, ...(Platform.OS === 'android' ? {} : { sound: 'default' }) },
@@ -78,7 +77,7 @@ async function notify(st: Student, list: NewGrade[]) {
   }
 }
 
-/** Prijava sačuvanim podacima, čitanje ocena aktuelnog razreda i javljanje novih. */
+/** Prijava sačuvanim podacima, čitanje ocena svih škola tekuće godine i javljanje novih. */
 export async function checkForNewGrades(): Promise<{ ok: boolean; fresh: number; message: string }> {
   const saved = await storage.loadCredentials();
   if (!saved) return { ok: false, fresh: 0, message: 'Nema sačuvane prijave (uključite „Zapamti me“).' };
@@ -88,17 +87,19 @@ export async function checkForNewGrades(): Promise<{ ok: boolean; fresh: number;
   const snap = readSnapshot();
   let total = 0;
   for (const st of students) {
-    const cls = currentClass(st);
-    if (!cls) continue;
-    const subjects = parseGrades(await client.getGrades(cls));
-    offline.saveGrades(cls, subjects); // i widget i rad bez interneta dobijaju sveže ocene
-    const now = fingerprints(subjects);
-    const key = keyOf(st, cls);
-    const fresh = findNew(snap.classes[key], now);
-    snap.classes[key] = [...now.keys()];
-    if (fresh.length) {
-      total += fresh.length;
-      await notify(st, fresh);
+    // sve škole tekuće godine (npr. osnovna i muzička)
+    const all = currentClasses(st);
+    for (const cls of all) {
+      const subjects = parseGrades(await client.getGrades(cls));
+      offline.saveGrades(cls, subjects); // i widget i rad bez interneta dobijaju sveže ocene
+      const now = fingerprints(subjects);
+      const key = keyOf(st, cls);
+      const fresh = findNew(snap.classes[key], now);
+      snap.classes[key] = [...now.keys()];
+      if (fresh.length) {
+        total += fresh.length;
+        await notify(all.length > 1 ? `${st.fullName} (${cls.schoolName})` : st.fullName, fresh);
+      }
     }
   }
   snap.lastCheck = new Date().toISOString();

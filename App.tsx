@@ -7,7 +7,7 @@ import demoData from './src/demoData.json';
 import { overview, parseGrades, shareText, Subject } from './src/grades';
 import GradesScreen from './src/GradesScreen';
 import LoginScreen from './src/LoginScreen';
-import { currentClass, LoginError, NetworkError, parseStudents, PortalClient, PortalError, Student, StudentClass } from './src/portal';
+import { currentClass, currentClasses, LoginError, NetworkError, parseStudents, PortalClient, PortalError, Student, StudentClass } from './src/portal';
 import * as offline from './src/offline';
 import * as storage from './src/storage';
 import * as bg from './src/background';
@@ -119,6 +119,10 @@ export default function App() {
   const [sectionState, setSectionState] = useState<SectionState>({ loading: false, blocks: null, error: null });
   const sectionCache = useRef(new Map<string, PageBlock[]>());
   const testsCache = useRef(new Map<string, { events: CalEvent[]; blocks: PageBlock[] }>());
+  // Ocene svih škola tekuće godine (ključ = razred), da prelazak sa škole na školu bude trenutan
+  const gradesMem = useRef(new Map<string, Subject[]>());
+  const [gradesVer, setGradesVer] = useState(0);
+  const gradesReq = useRef(0);
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioOn, setBioOn] = useState(false);
   const [notifyOn, setNotifyOn] = useState(false);
@@ -193,30 +197,78 @@ export default function App() {
     return pr;
   }, [ensureLogin]);
 
+  // Ostale škole iste godine (npr. muzička) učitavaju se u pozadini, jedna po jedna
+  const prefetchOthers = useCallback(
+    async (owner: Student, except: StudentClass, force = false) => {
+      for (const c of currentClasses(owner)) {
+        const k = offline.classKey(c);
+        if (k === offline.classKey(except)) continue;
+        try {
+          if (force || !gradesMem.current.has(k)) {
+            const parsed = parseGrades(await client.current.getGrades(c));
+            gradesMem.current.set(k, parsed);
+            setGradesVer((v) => v + 1);
+            offline.saveGrades(c, parsed);
+            bg.rememberSeen(owner, c, parsed);
+          }
+          await fetchTests(c, force);
+        } catch {
+          /* pokušaće ponovo pri prelasku na tu školu */
+        }
+      }
+    },
+    [fetchTests],
+  );
+
+  const demoGrades = (cls: StudentClass) => (cls.studentClassId === 90003 ? demoData.gradesMusic : demoData.grades);
+
   const loadGrades = useCallback(
-    async (cls: StudentClass, isDemo = demo, owner?: Student | null) => {
+    async (cls: StudentClass, isDemo = demo, owner?: Student | null, forceOthers = false) => {
+      const req = ++gradesReq.current;
+      const k = offline.classKey(cls);
+      // ako je škola već učitana, prikaži je odmah, a sveže ocene stižu iza
+      const known = gradesMem.current.get(k) ?? (isDemo ? undefined : offline.load()?.grades[k]);
+      if (known) {
+        setSelected(cls);
+        setSubjects(known);
+      }
       let parsed: Subject[];
       try {
-        parsed = parseGrades(isDemo ? demoData.grades : await client.current.getGrades(cls));
+        parsed = parseGrades(isDemo ? demoGrades(cls) : await client.current.getGrades(cls));
       } catch (e) {
-        const cached = !isDemo && e instanceof NetworkError ? offline.load()?.grades[offline.classKey(cls)] : undefined;
+        if (req !== gradesReq.current) return;
+        const cached = !isDemo && e instanceof NetworkError ? known : undefined;
         if (!cached) throw e;
         setSelected(cls);
         setSubjects(cached);
         showOffline();
         return;
       }
-      setSelected(cls);
-      setSubjects(parsed);
-      setError(null);
-      if (!isDemo) {
-        setOfflineNote(null);
-        offline.saveGrades(cls, parsed);
-      }
+      gradesMem.current.set(k, parsed);
+      setGradesVer((v) => v + 1);
+      if (!isDemo) offline.saveGrades(cls, parsed);
       if (!isDemo && owner) bg.rememberSeen(owner, cls, parsed);
-      if (!isDemo) fetchTests(cls).catch(() => 0);
+      if (req === gradesReq.current) {
+        setSelected(cls);
+        setSubjects(parsed);
+        setError(null);
+        if (!isDemo) setOfflineNote(null);
+      }
+      if (isDemo && owner) {
+        for (const c of currentClasses(owner)) {
+          const ck = offline.classKey(c);
+          if (!gradesMem.current.has(ck)) gradesMem.current.set(ck, parseGrades(demoGrades(c)));
+        }
+      }
+      if (!isDemo) {
+        // provere ove škole, pa ostale škole – u pozadini, ne zadržavaju prikaz
+        fetchTests(cls)
+          .catch(() => 0)
+          .then(() => (owner ? prefetchOthers(owner, cls, forceOthers) : undefined))
+          .catch(() => 0);
+      }
     },
-    [demo, fetchTests, showOffline],
+    [demo, fetchTests, prefetchOthers, showOffline],
   );
 
   const loadAll = useCallback(
@@ -322,6 +374,7 @@ export default function App() {
     setSection('grades');
     sectionCache.current.clear();
     testsCache.current.clear();
+    gradesMem.current.clear();
     setMode('login');
   };
 
@@ -351,7 +404,7 @@ export default function App() {
     try {
       if (selected) {
         if (!demo) await ensureLogin();
-        await loadGrades(selected, demo, students.find((s) => s.id === studentId));
+        await loadGrades(selected, demo, students.find((s) => s.id === studentId), true);
         if (section !== 'grades') await loadSection(section, selected, true);
       }
     } catch (e) {
@@ -443,12 +496,19 @@ export default function App() {
   const view = useMemo(() => {
     if (!student || !selected) return null;
     const cur = currentClass(student)!;
-    const currentYear = student.classes.filter((c) => c.yearLabel === cur.yearLabel).sort((a, b) => b.classId - a.classId);
+    const currentYear = currentClasses(student);
     const otherYears = student.classes
       .filter((c) => c.yearLabel !== cur.yearLabel)
       .sort((a, b) => b.yearLabel.localeCompare(a.yearLabel));
-    return { currentYear, otherYears, isCurrent: selected.yearLabel === cur.yearLabel };
-  }, [student, selected]);
+    const stored = demo ? null : offline.load();
+    const averages: Record<string, number | null> = {};
+    for (const c of currentYear) {
+      const k = offline.classKey(c);
+      const sub = gradesMem.current.get(k) ?? stored?.grades[k];
+      averages[k] = sub ? overview(sub).overallAverage : null;
+    }
+    return { currentYear, otherYears, isCurrent: selected.yearLabel === cur.yearLabel, averages };
+  }, [student, selected, gradesVer, demo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const summary = useMemo(() => overview(subjects), [subjects]);
 
@@ -478,6 +538,7 @@ export default function App() {
             student={student}
             selected={selected}
             currentYear={view.currentYear}
+            schoolAverages={view.averages}
             otherYears={view.otherYears}
             isCurrent={view.isCurrent}
             subjects={subjects}
