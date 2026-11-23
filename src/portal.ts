@@ -411,7 +411,7 @@ export class PortalClient {
 
   /** Izveštaj o strukturi stranica — bez imena, ocena i drugih ličnih podataka. */
   async diagnose(): Promise<string> {
-    const lines: string[] = [`verzija: 6`];
+    const lines: string[] = [`verzija: 7`];
     const check = async (path: string, json: boolean) => {
       const t0 = Date.now();
       try {
@@ -425,6 +425,38 @@ export class PortalClient {
       }
     };
     const home = await check('/', false);
+    // prebacivanje između dece i škola tekuće godine
+    try {
+      const homeHtml = home?.body ?? '';
+      const cards = homeHtml.split(/<div class="card student/).slice(1);
+      lines.push('--- PREBACIVANJE (najvažnije) ---');
+      lines.push(`kartice dece na početnoj: ${cards.length}, upisa po kartici: ${cards.map((c) => (c.match(/student-school-class-wrap/g) ?? []).length).join('/')}`);
+      const rows = parseStudentsMenu(homeHtml, this.baseUrl);
+      lines.push(`linkovi upisa (tekuća godina): ${rows.filter((r) => r.yearLabel === rows.map((x) => x.yearLabel).sort().slice(-1)[0]).map((r) => `${maskPath(r.switchHref) || '/'}${r.active ? '*' : ''}[${r.yearLabel}]`).join(' ')}`);
+      const students = await this.getStudents();
+      lines.push(`dece: ${students.length}, upisa tekuće godine: ${students.map((s) => currentClasses(s).length).join('+')}`);
+      const sig = (html: string) => {
+        const ids = parseSubjectLinks(html).map((x) => x.id).join(',');
+        let h = 5381;
+        for (let i = 0; i < ids.length; i++) h = ((h * 33) ^ ids.charCodeAt(i)) >>> 0;
+        return `${parseSubjectLinks(html).length} predmeta, otisak ${(h % 65536).toString(16)}`;
+      };
+      lines.push(`tekuća godina po deci: ${students.map((s) => currentClasses(s).map((c) => c.yearLabel).join(',')).join(' | ')}`);
+      for (const [i, st] of students.entries()) {
+        for (const [j, cls] of currentClasses(st).entries()) {
+          this.switchLog = [];
+          try {
+            const page = await this.openGradesFor(cls);
+            lines.push(`dete ${i + 1}, škola ${j + 1}: ${sig(page.html)}; ${this.switchLog.join('; ') || 'već aktivno'}`);
+          } catch (e) {
+            lines.push(`dete ${i + 1}, škola ${j + 1}: NIJE PREBAČENO; ${this.switchLog.join('; ')}; ${(e as Error).message?.slice(0, 60)}`);
+          }
+        }
+      }
+      lines.push('--- KRAJ PREBACIVANJA ---');
+    } catch (e) {
+      lines.push(`prebacivanje: greška ${(e as Error).message?.slice(0, 80)}`);
+    }
     let scid = 0;
     if (home) {
       const props = componentProps(home.body);
@@ -480,35 +512,6 @@ export class PortalClient {
       const blocksFound = parsePageBlocks(pg.body);
       lines.push(`  blokova: ${blocksFound.length}, redova: ${blocksFound.map((b) => b.lines.length).join('/')}`);
       lines.push(`  kostur: ${maskedSkeleton(pg.body, 'sections-wrap', 2500) || maskedSkeleton(pg.body, 'main-content', 2500)}`);
-    }
-    // prebacivanje između dece i škola tekuće godine
-    try {
-      const homeHtml = home?.body ?? '';
-      const cards = homeHtml.split(/<div class="card student/).slice(1);
-      lines.push(`kartice dece na početnoj: ${cards.length}, upisa po kartici: ${cards.map((c) => (c.match(/student-school-class-wrap/g) ?? []).length).join('/')}`);
-      const rows = parseStudentsMenu(homeHtml, this.baseUrl);
-      lines.push(`linkovi upisa: ${rows.map((r) => `${maskPath(r.switchHref) || '/'}${r.active ? '*' : ''}[${r.yearLabel}]`).join(' ')}`);
-      const students = await this.getStudents();
-      lines.push(`dece: ${students.length}, upisa tekuće godine: ${students.map((s) => currentClasses(s).length).join('+')}`);
-      const sig = (html: string) => {
-        const ids = parseSubjectLinks(html).map((x) => x.id).join(',');
-        let h = 5381;
-        for (let i = 0; i < ids.length; i++) h = ((h * 33) ^ ids.charCodeAt(i)) >>> 0;
-        return `${parseSubjectLinks(html).length} predmeta, otisak ${(h % 65536).toString(16)}`;
-      };
-      for (const [i, st] of students.entries()) {
-        for (const [j, cls] of currentClasses(st).entries()) {
-          this.switchLog = [];
-          try {
-            const page = await this.openGradesFor(cls);
-            lines.push(`dete ${i + 1}, škola ${j + 1}: ${sig(page.html)}; ${this.switchLog.join('; ') || 'već aktivno'}`);
-          } catch (e) {
-            lines.push(`dete ${i + 1}, škola ${j + 1}: NIJE PREBAČENO; ${this.switchLog.join('; ')}; ${(e as Error).message?.slice(0, 60)}`);
-          }
-        }
-      }
-    } catch (e) {
-      lines.push(`prebacivanje: greška ${(e as Error).message?.slice(0, 80)}`);
     }
     return lines.join('\n');
   }
