@@ -182,7 +182,7 @@ export function shapeOf(v: unknown, depth = 0): string {
   return v === null ? 'null' : typeof v;
 }
 
-export const maskPath = (url: string) => url.replace(/^https?:\/\/[^/]+/, '').replace(/\d+/g, 'N');
+export const maskPath = (url: string) => url.replace(/^https?:\/\/[^/?#]+/, '').replace(/\d+/g, 'N');
 
 // ---------------- Stranice sa ocenama (/grades i /grades/{id}/show) ----------------
 

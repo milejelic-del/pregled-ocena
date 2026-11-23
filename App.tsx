@@ -81,6 +81,8 @@ export default function App() {
   const [savedUsername, setSavedUsername] = useState<string | null>(null);
 
   const [students, setStudents] = useState<Student[]>([]);
+  const studentsRef = useRef<Student[]>([]);
+  studentsRef.current = students;
   const [studentId, setStudentId] = useState<number | null>(null);
   const [selected, setSelected] = useState<StudentClass | null>(null);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -197,10 +199,11 @@ export default function App() {
     return pr;
   }, [ensureLogin]);
 
-  // Ostale škole iste godine (npr. muzička) učitavaju se u pozadini, jedna po jedna
+  // Sve ostale škole tekuće godine, za svu decu (npr. i muzička), učitavaju se u pozadini, jedna po jedna
   const prefetchOthers = useCallback(
-    async (owner: Student, except: StudentClass, force = false) => {
-      for (const c of currentClasses(owner)) {
+    async (first: Student, except: StudentClass, force = false) => {
+      const all = [first, ...studentsRef.current.filter((x) => x.id !== first.id)];
+      for (const owner of all) for (const c of currentClasses(owner)) {
         const k = offline.classKey(c);
         if (k === offline.classKey(except)) continue;
         try {
@@ -381,6 +384,7 @@ export default function App() {
   const diagnose = async (username: string, password: string) => {
     setBusy(true);
     setError(null);
+    setDiag('Dijagnostika je pokrenuta, sačekajte do jednog minuta…');
     try {
       if (!client.current.loggedIn) {
         const saved = !username && !password ? await storage.loadCredentials() : null;
@@ -388,6 +392,7 @@ export default function App() {
       }
       setDiag(await client.current.diagnose());
     } catch (e) {
+      setDiag(null);
       fail(e);
     } finally {
       setBusy(false);
@@ -487,6 +492,19 @@ export default function App() {
     setBioOn(on);
   };
 
+  // drugo dete: odmah prikaži ono što je već učitano, pa osveži
+  const selectStudent = (id: number) => {
+    const st = students.find((x) => x.id === id);
+    const cls = st ? currentClass(st) : null;
+    if (!st || !cls) return;
+    setStudentId(id);
+    if (!demo) offline.saveStudents(students, id);
+    setRefreshing(true);
+    loadGrades(cls, demo, st)
+      .catch(fail)
+      .finally(() => setRefreshing(false));
+  };
+
   const selectClass = (c: StudentClass) => {
     setRefreshing(true);
     loadGrades(c, demo, student)
@@ -546,7 +564,7 @@ export default function App() {
             demo={demo}
             refreshing={refreshing}
             onRefresh={refresh}
-            onSelectStudent={(id) => loadAll(demo, id).catch(fail)}
+            onSelectStudent={selectStudent}
             onSelectClass={selectClass}
             onLogout={logout}
             themeChoice={themeChoice}
@@ -557,6 +575,7 @@ export default function App() {
             onSection={openSection}
             sectionState={sectionState}
             onShare={share}
+            onDiagnose={() => diagnose('', '')}
             onBackToCurrent={() => selectClass(currentClass(student)!)}
             security={{ available: bioAvailable, on: bioOn, onToggle: toggleBio }}
             notify={{ on: notifyOn, message: notifyMsg, checking, lastCheck: bg.lastCheck(), onToggle: toggleNotify, onCheckNow: checkNow }}

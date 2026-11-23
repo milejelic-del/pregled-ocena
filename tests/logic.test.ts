@@ -196,3 +196,42 @@ test('same child on two portal cards (two schools) becomes one student', async (
   assert.equal(st.length, 1);
   assert.deepEqual(currentClasses(st[0]).map((k) => k.schoolName).sort(), ['Музичка школа', 'ОШ']);
 });
+
+// Lažni portal sa dvoje dece; `switchVia` određuje koja adresa stvarno menja aktivno dete u sesiji.
+function twoKidsPortal(switchVia: 'home' | 'never') {
+  let active = '11';
+  const card = (id: string, name: string, sch: string) =>
+    `<div class="card student"><div class="card-header"><h5 data-bs-target="#student-${id}"><div class="student-no-avatar">X</div> ${name} </h5></div>` +
+    `<a href="${id === active ? 'http://x' : `http://x?student=${id}`}" class="student-school-class-wrap${id === active ? ' active' : ''}"><div class="student-school-class-item">${sch}</div>` +
+    `<div class="student-school-class-item">26/27 V 1</div></a></div>`;
+  const menu = () => `<div id="students-list">${card('11', 'Ана Петровић', 'ОШ А')}${card('22', 'Марко Петровић', 'ОШ Б')}</div>`;
+  const fake = (async (url: string) => {
+    const u = new URL(url);
+    const sw = u.searchParams.get('student');
+    if (sw && switchVia === 'home' && u.pathname === '/') active = sw;
+    const body = u.pathname.startsWith('/grades')
+      ? `<html>${menu()}<a class="dropdown-item" href="http://x/grades/${active}01/show">Predmet ${active}</a></html>`
+      : `<html>${menu()}</html>`;
+    return { status: 200, url, text: async () => body, headers: new Headers({ 'content-type': 'text/html' }) } as unknown as Response;
+  }) as unknown as FetchFn;
+  const c = new PortalClient('http://x', fake);
+  c.mode = 'html';
+  c.loggedIn = true;
+  return c;
+}
+
+test('switching to another child is verified (home link works)', async () => {
+  const c = twoKidsPortal('home');
+  const kids = await c.getStudents();
+  assert.equal(kids.length, 2);
+  const marko = currentClass(kids.find((k) => k.fullName.includes('Марко'))!)!;
+  const g = (await c.getGrades(marko)) as { course: string }[];
+  assert.equal(g[0].course, 'Predmet 22');
+});
+
+test('if the portal does not switch, an error is shown instead of the wrong child grades', async () => {
+  const c = twoKidsPortal('never');
+  const kids = await c.getStudents();
+  const marko = currentClass(kids.find((k) => k.fullName.includes('Марко'))!)!;
+  await assert.rejects(c.getGrades(marko), /nije prebacio/);
+});

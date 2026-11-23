@@ -10,7 +10,11 @@ import type { CalEvent, PageBlock } from './html';
 import { isTest } from './html';
 import { currentClass, Student, StudentClass } from './portal';
 
+/** v1.8.1: podaci pre ove verzije mogu imati ocene pogrešne škole -> ne koriste se */
+const DATA_VERSION = 2;
+
 export interface OfflineData {
+  v?: number;
   savedAt: string; // ISO
   students: Student[];
   studentId: number | null;
@@ -43,6 +47,7 @@ export function load(): OfflineData | null {
   try {
     const f = file();
     if (f.exists) mem = JSON.parse(f.textSync()) as OfflineData;
+    if (mem && mem.v !== DATA_VERSION) mem = null;
   } catch {
     mem = null;
   }
@@ -50,7 +55,7 @@ export function load(): OfflineData | null {
 }
 
 function empty(): OfflineData {
-  return { savedAt: new Date().toISOString(), students: [], studentId: null, grades: {}, sections: {}, tests: {} };
+  return { v: DATA_VERSION, savedAt: new Date().toISOString(), students: [], studentId: null, grades: {}, sections: {}, tests: {} };
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null;

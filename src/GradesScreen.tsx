@@ -35,6 +35,7 @@ interface Props {
   onSection: (s: SectionKey) => void;
   sectionState: SectionState;
   onShare: () => void;
+  onDiagnose?: () => void;
   onBackToCurrent: () => void;
   security: { available: boolean; on: boolean; onToggle: (on: boolean) => void };
 }
@@ -428,6 +429,11 @@ export default function GradesScreen(p: Props) {
       {!p.demo ? <NotifyCard {...p.notify} security={p.security} /> : null}
       <ThemePicker value={p.themeChoice} onChange={p.onThemeChange} />
       <Text style={st.footer}>Podaci se preuzimaju sa moj.esdnevnik.rs i ostaju samo na ovom telefonu.{'\n'}Povucite nadole za osvežavanje.</Text>
+      {p.onDiagnose && !p.demo ? (
+        <Pressable onPress={p.onDiagnose} style={{ alignSelf: 'center', marginTop: 8, padding: 6 }}>
+          <Text style={{ color: C.primary, fontSize: 13 }}>Dijagnostika (ako se ocene neke škole ne učitavaju)</Text>
+        </Pressable>
+      ) : null}
       <Text style={st.signature}>by Mile Jelić · Petica v{APP_VERSION}</Text>
     </ScrollView>
   );

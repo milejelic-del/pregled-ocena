@@ -91,12 +91,17 @@ export class PortalClient {
     }
   }
 
+  /** ključ razreda -> link iz menija portala (tačno onakav kakav portal daje) */
+  private switchHrefs = new Map<string, string>();
+  /** zapis pokušaja prebacivanja (za dijagnostiku, bez ličnih podataka) */
+  switchLog: string[] = [];
   private learnMenu(html: string) {
     const rows = parseStudentsMenu(html, this.baseUrl);
     for (const r of rows) {
       const key = classKey(r);
       const q = r.switchHref.match(/[?&]student=(\d+)/);
       if (q) this.knownIds.set(key, q[1]);
+      if (!r.active) this.switchHrefs.set(key, r.switchHref);
       if (r.active) this.serverActive = key;
     }
     return rows.length;
@@ -353,36 +358,55 @@ export class PortalClient {
     return { events, blocks };
   }
 
-  /** Otvara /grades tako da je na portalu aktivan traženi razred. */
+  /**
+   * Otvara /grades tako da je na portalu aktivan traženi razred (dete/škola).
+   * Prelazak se uvek proverava po meniju portala; ako ne uspe, javlja se greška umesto pogrešnih ocena.
+   */
   private async openGradesFor(cls: StudentClass): Promise<{ html: string; url: string }> {
     const key = cls.portalKey;
-    if (!key || key === this.serverActive) {
+    const grades = async () => {
       const page = await this.getHtml('/grades');
-      this.learnMenu(page.html);
-      if (!key || this.serverActive === key || !this.knownIds.has(key)) return page;
+      return { page, rows: this.learnMenu(page.html) };
+    };
+    if (!key) return (await grades()).page;
+    if (key === this.serverActive) {
+      const g = await grades();
+      if (this.serverActive === key || !g.rows) return g.page;
     }
-    if (!this.knownIds.has(key!)) {
-      // ID razreda još nije viđen u meniju (npr. bio je aktivan pri prijavi) -> pogledaj meni na početnoj
+    if (!this.knownIds.has(key) && !this.switchHrefs.has(key)) {
+      // razred još nije viđen u meniju -> pogledaj meni na početnoj
       await this.getHtml('/').then((p) => this.learnMenu(p.html)).catch(() => 0);
+      if (this.serverActive === key) {
+        const g = await grades();
+        if (this.serverActive === key) return g.page;
+      }
     }
-    const id = this.knownIds.get(key!);
-    if (!id && this.serverActive === key) return this.getHtml('/grades');
-    if (!id) throw new PortalError('Ne mogu da prebacim na ovaj razred. Osvežite (povucite nadole) pa pokušajte ponovo.');
-    // portal menja aktivni razred preko ?student=N (na stranici ocena, a rezervno na početnoj)
-    let page = await this.getHtml(`/grades?student=${id}`);
-    const found = this.learnMenu(page.html);
-    if (found && this.serverActive !== key) {
-      await this.getHtml(`/?student=${id}`).then((p) => this.learnMenu(p.html));
-      page = await this.getHtml('/grades');
-      this.learnMenu(page.html);
+    const id = this.knownIds.get(key);
+    const href = this.switchHrefs.get(key);
+    const tries = [
+      ...(href ? [href.startsWith(this.baseUrl) ? href.slice(this.baseUrl.length) || '/' : href] : []),
+      ...(id ? [`/?student=${id}`, `/grades?student=${id}`] : []),
+    ].filter((v, i, arr) => arr.indexOf(v) === i);
+    if (!tries.length) throw new PortalError('Ne mogu da prebacim na ovu školu. Osvežite (povucite nadole) pa pokušajte ponovo.');
+    for (const path of tries) {
+      const sw = await this.getHtml(path.startsWith('http') || path.startsWith('/') ? path : `/${path}`);
+      const swRows = this.learnMenu(sw.html);
+      const g = await grades();
+      const ok = this.serverActive === key || (!g.rows && !swRows);
+      this.switchLog.push(`${maskPath(path)} -> meni ${swRows}/${g.rows}, prebačeno ${ok ? 'da' : 'ne'}`);
+      if (ok) {
+        this.serverActive = key;
+        return g.page;
+      }
     }
-    if (!found) this.serverActive = key;
-    return page;
+    throw new PortalError(
+      `Portal nije prebacio na „${cls.schoolName} · ${cls.section}“. Pokušajte ponovo; ako se ponavlja, pokrenite „Dijagnostiku“ i pošaljite rezultat.`,
+    );
   }
 
   /** Izveštaj o strukturi stranica — bez imena, ocena i drugih ličnih podataka. */
   async diagnose(): Promise<string> {
-    const lines: string[] = [`verzija: 5`];
+    const lines: string[] = [`verzija: 6`];
     const check = async (path: string, json: boolean) => {
       try {
         const r = await this.req(path, json ? { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } } : {});
@@ -451,28 +475,34 @@ export class PortalClient {
       lines.push(`  blokova: ${blocksFound.length}, redova: ${blocksFound.map((b) => b.lines.length).join('/')}`);
       lines.push(`  kostur: ${maskedSkeleton(pg.body, 'sections-wrap', 2500) || maskedSkeleton(pg.body, 'main-content', 2500)}`);
     }
-    // ranija godina: kako izgleda stranica predmeta
+    // prebacivanje između dece i škola tekuće godine
     try {
+      const homeHtml = home?.body ?? '';
+      const cards = homeHtml.split(/<div class="card student/).slice(1);
+      lines.push(`kartice dece na početnoj: ${cards.length}, upisa po kartici: ${cards.map((c) => (c.match(/student-school-class-wrap/g) ?? []).length).join('/')}`);
+      const rows = parseStudentsMenu(homeHtml, this.baseUrl);
+      lines.push(`linkovi upisa: ${rows.map((r) => `${maskPath(r.switchHref) || '/'}${r.active ? '*' : ''}[${r.yearLabel}]`).join(' ')}`);
       const students = await this.getStudents();
-      const st = students[0];
-      const cur = st ? currentClass(st) : null;
-      const older = st?.classes.filter((c) => cur && c.yearLabel !== cur.yearLabel).sort((a, b) => yearKey(b.yearLabel) - yearKey(a.yearLabel))[0];
-      if (older && cur) {
-        const page = await this.openGradesFor(older);
-        const subj = parseSubjectLinks(page.html);
-        lines.push(`ranija godina: predmeta ${subj.length}, aktivno ${this.serverActive === older.portalKey ? 'da' : 'ne'}`);
-        if (subj[0]) {
-          const sh = (await this.getHtml(`/grades/${subj[0].id}/show`)).html;
-          const parsed = parseSubjectPage(sh, 'x', 1);
-          const all = parsed ? Object.values(parsed.parts).flatMap((x: any) => x.grades) : [];
-          lines.push(`  prepoznato ocena: ${all.length}, brojčanih ${all.filter((g: any) => g.grade).length}, sa datumom ${all.filter((g: any) => g.date).length}, delova ${parsed ? Object.keys(parsed.parts).join(',') : '-'}`);
-          lines.push(`  kostur: ${maskedSkeleton(sh, 'sections-wrap', 3000) || maskedSkeleton(sh, 'main-content', 3000)}`);
+      lines.push(`dece: ${students.length}, upisa tekuće godine: ${students.map((s) => currentClasses(s).length).join('+')}`);
+      const sig = (html: string) => {
+        const ids = parseSubjectLinks(html).map((x) => x.id).join(',');
+        let h = 5381;
+        for (let i = 0; i < ids.length; i++) h = ((h * 33) ^ ids.charCodeAt(i)) >>> 0;
+        return `${parseSubjectLinks(html).length} predmeta, otisak ${(h % 65536).toString(16)}`;
+      };
+      for (const [i, st] of students.entries()) {
+        for (const [j, cls] of currentClasses(st).entries()) {
+          this.switchLog = [];
+          try {
+            const page = await this.openGradesFor(cls);
+            lines.push(`dete ${i + 1}, škola ${j + 1}: ${sig(page.html)}; ${this.switchLog.join('; ') || 'već aktivno'}`);
+          } catch (e) {
+            lines.push(`dete ${i + 1}, škola ${j + 1}: NIJE PREBAČENO; ${this.switchLog.join('; ')}; ${(e as Error).message?.slice(0, 60)}`);
+          }
         }
-        await this.openGradesFor(cur);
-        lines.push(`povratak na tekući: ${this.serverActive === cur.portalKey ? 'da' : 'ne'}`);
       }
     } catch (e) {
-      lines.push(`ranija godina: greška ${(e as Error).message?.slice(0, 80)}`);
+      lines.push(`prebacivanje: greška ${(e as Error).message?.slice(0, 80)}`);
     }
     return lines.join('\n');
   }
