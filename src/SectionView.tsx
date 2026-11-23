@@ -1,4 +1,5 @@
-import { ActivityIndicator, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { CalEvent, isTest, PageBlock } from './html';
 import { cardStyle, Palette, useTheme } from './theme';
 
@@ -125,6 +126,29 @@ function MonthStrip({ events }: { events: CalEvent[] }) {
   );
 }
 
+/** Blok ispod najavljenih provera: podrazumevano skupljen, dodir na naslov ga otvara/zatvara. */
+function CollapsibleBlock({ block: b }: { block: PageBlock }) {
+  const C = useTheme();
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={cardStyle(C)}>
+      <Pressable onPress={() => setOpen(!open)} style={{ flexDirection: 'row', alignItems: 'center' }} accessibilityRole="button" accessibilityState={{ expanded: open }}>
+        <Text style={{ flex: 1, color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase' }}>
+          {b.title || 'Ostale informacije'} <Text style={{ fontWeight: '400', textTransform: 'none' }}>({b.lines.length})</Text>
+        </Text>
+        <Text style={{ color: C.primary, fontSize: 13, fontWeight: '700' }}>{open ? 'Sakrij ▴' : 'Prikaži ▾'}</Text>
+      </Pressable>
+      {open
+        ? b.lines.map((line, j) => (
+            <Text key={j} style={{ color: C.text, fontSize: 14, lineHeight: 20, paddingVertical: 6, borderTopWidth: 1, borderTopColor: C.divider, marginTop: j ? 0 : 8 }}>
+              {line}
+            </Text>
+          ))
+        : null}
+    </View>
+  );
+}
+
 function TestsView({ state }: { state: SectionState }) {
   const C = useTheme();
   const card = cardStyle(C);
@@ -175,14 +199,7 @@ function TestsView({ state }: { state: SectionState }) {
         ) : null}
       </View>
       {blocks.map((b, i) => (
-        <View key={i} style={card}>
-          {b.title ? <Text style={{ color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase' }}>{b.title}</Text> : null}
-          {b.lines.map((line, j) => (
-            <Text key={j} style={{ color: C.text, fontSize: 14, lineHeight: 20, paddingVertical: 6, borderTopWidth: j ? 1 : 0, borderTopColor: C.divider }}>
-              {line}
-            </Text>
-          ))}
-        </View>
+        <CollapsibleBlock key={i} block={b} />
       ))}
     </View>
   );
